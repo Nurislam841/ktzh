@@ -1,0 +1,211 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum TrackStatus {
+  FREE
+  OCCUPIED
+  MAINTENANCE
+}
+
+enum LocomotiveStatus {
+  AVAILABLE
+  EN_ROUTE
+  MAINTENANCE
+  FAILED
+}
+
+enum CrewStatus {
+  AVAILABLE
+  ASSIGNED
+  RESTING
+  UNAVAILABLE
+}
+
+enum TrainPriority {
+  PASSENGER
+  FREIGHT
+  OTHER
+}
+
+enum TrainRunStatus {
+  PLANNED
+  ACTIVE
+  DEPARTED
+  ARRIVED
+  CANCELLED
+}
+
+enum OperationalEventType {
+  LOCOMOTIVE_FAILURE
+  CREW_UNAVAILABLE
+  TRAIN_DELAY
+  TRACK_BLOCKED
+  MAINTENANCE_STARTED
+  MAINTENANCE_ENDED
+}
+
+// ─────────────────────────────────────────────
+// MODELS
+// ─────────────────────────────────────────────
+
+model Station {
+  id        String   @id @default(uuid())
+  name      String
+  code      String?  @unique
+  createdAt DateTime @default(now())
+
+  tracks           Track[]
+  locomotives      Locomotive[]   @relation("StationLocomotives")
+  trainRunsOrigin  TrainRun[]    @relation("OriginStation")
+  trainRunsDest    TrainRun[]    @relation("DestStation")
+  scheduleVersions ScheduleVersion[]
+  events           OperationalEvent[]
+}
+
+model Track {
+  id              String      @id @default(uuid())
+  stationId       String
+  name            String
+  status          TrackStatus @default(FREE)
+  maintenanceFrom DateTime?
+  maintenanceTo   DateTime?
+
+  station     Station      @relation(fields: [stationId], references: [id])
+  allocations Allocation[]
+
+  @@index([stationId, status])
+}
+
+model Depot {
+  id   String @id @default(uuid())
+  name String
+
+  locomotives Locomotive[]
+  crews       Crew[]
+}
+
+model Locomotive {
+  id                String           @id @default(uuid())
+  series            String
+  number            String
+  depotId           String
+  locationStationId String?
+  status            LocomotiveStatus @default(AVAILABLE)
+  availableFrom     DateTime         @default(now())
+  maintenanceFrom   DateTime?
+  maintenanceTo     DateTime?
+
+  depot           Depot    @relation(fields: [depotId], references: [id])
+  locationStation Station? @relation("StationLocomotives", fields: [locationStationId], references: [id])
+  allocations     Allocation[]
+
+  @@index([status, availableFrom])
+}
+
+model Crew {
+  id                   String     @id @default(uuid())
+  depotId              String
+  status               CrewStatus @default(AVAILABLE)
+  availableFrom        DateTime   @default(now())
+  requiredNoticeMinutes Int       @default(120)
+
+  depot       Depot        @relation(fields: [depotId], references: [id])
+  allocations Allocation[]
+
+  @@index([status, availableFrom])
+}
+
+model Train {
+  id       String        @id @default(uuid())
+  number   String        @unique
+  priority TrainPriority @default(OTHER)
+
+  trainRuns TrainRun[]
+}
+
+model TrainRun {
+  id                   String         @id @default(uuid())
+  trainId              String
+  originStationId      String
+  destinationStationId String
+  scheduledDeparture   DateTime
+  scheduledArrival     DateTime
+  currentDelayMinutes  Int            @default(0)
+  status               TrainRunStatus @default(PLANNED)
+
+  train               Train      @relation(fields: [trainId], references: [id])
+  originStation       Station    @relation("OriginStation", fields: [originStationId], references: [id])
+  destinationStation  Station    @relation("DestStation", fields: [destinationStationId], references: [id])
+  allocations         Allocation[]
+
+  @@index([scheduledDeparture])
+}
+
+model ScheduleVersion {
+  id              String  @id @default(uuid())
+  stationId       String
+  createdAt       DateTime @default(now())
+  createdByUserId String?
+  reason          String
+  baseVersionId   String?
+
+  station     Station      @relation(fields: [stationId], references: [id])
+  baseVersion ScheduleVersion?  @relation("VersionHistory", fields: [baseVersionId], references: [id])
+  childVersions ScheduleVersion[] @relation("VersionHistory")
+  allocations Allocation[]
+}
+
+model Allocation {
+  id                  String   @id @default(uuid())
+  scheduleVersionId   String
+  trainRunId          String
+  plannedDeparture    DateTime
+  plannedArrival      DateTime
+  assignedTrackId     String?
+  assignedLocomotiveId String?
+  assignedCrewId      String?
+  conflictFlags       Json     @default("{}")
+  notes               String   @default("")
+
+  scheduleVersion  ScheduleVersion @relation(fields: [scheduleVersionId], references: [id])
+  trainRun         TrainRun        @relation(fields: [trainRunId], references: [id])
+  assignedTrack    Track?          @relation(fields: [assignedTrackId], references: [id])
+  assignedLocomotive Locomotive?   @relation(fields: [assignedLocomotiveId], references: [id])
+  assignedCrew     Crew?           @relation(fields: [assignedCrewId], references: [id])
+
+  @@index([scheduleVersionId])
+  @@index([trainRunId])
+}
+
+model OperationalEvent {
+  id        String               @id @default(uuid())
+  stationId String
+  type      OperationalEventType
+  payload   Json                 @default("{}")
+  createdAt DateTime             @default(now())
+
+  station Station @relation(fields: [stationId], references: [id])
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String
+  payload     Json     @default("{}")
+  createdAt   DateTime @default(now())
+}

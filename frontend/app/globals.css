@@ -1,0 +1,221 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    background: #F4F6FA;
+    color: #1a1a2e;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #D1D5DB;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+  }
+}
+
+@layer components {
+
+  /* ── Layout ──────────────────────────────────────────── */
+  .sidebar {
+    @apply fixed left-0 top-0 h-full w-16 bg-white border-r border-gray-100 flex flex-col items-center py-4 z-40 shadow-sm;
+  }
+
+  .main-wrapper {
+    @apply ml-16 min-h-screen flex flex-col;
+  }
+
+  .topbar {
+    @apply bg-white border-b border-gray-100 px-6 flex items-center justify-between h-14 sticky top-0 z-30;
+  }
+
+  .page-content {
+    @apply flex-1 px-6 py-6;
+  }
+
+  /* ── Sidebar Icons ───────────────────────────────────── */
+  .sidebar-icon {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:bg-sky-50 hover:text-sky-600 transition-all duration-200 cursor-pointer mb-1;
+  }
+
+  .sidebar-icon-active {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center bg-sky-600 text-white cursor-pointer mb-1 shadow-lg shadow-sky-200;
+  }
+
+  /* ── Topbar Nav ──────────────────────────────────────── */
+  .nav-tab {
+    @apply px-4 py-1.5 rounded-full text-sm font-medium text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-all;
+  }
+
+  .nav-tab-active {
+    @apply px-4 py-1.5 rounded-full text-sm font-medium text-sky-700 bg-sky-50;
+  }
+
+  /* ── Cards ───────────────────────────────────────────── */
+  .card {
+    @apply bg-white rounded-2xl border border-gray-100 p-5 shadow-sm;
+  }
+
+  .card-hover {
+    @apply card hover:shadow-md hover:border-sky-200 transition-all duration-200 cursor-pointer;
+  }
+
+  /* ── Folder / Stat Cards ─────────────────────────────── */
+  .stat-card {
+    @apply bg-white rounded-2xl border border-gray-100 p-4 shadow-sm flex items-start gap-3;
+  }
+
+  .stat-icon {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 text-lg;
+  }
+
+  /* ── Kanban ──────────────────────────────────────────── */
+  .kanban-col {
+    @apply flex-1 min-w-0;
+  }
+
+  .kanban-header {
+    @apply flex items-center justify-between mb-3;
+  }
+
+  .kanban-card {
+    @apply bg-white rounded-2xl border border-gray-100 p-4 shadow-sm mb-3 hover:shadow-md hover:border-gray-200 transition-all duration-200;
+  }
+
+  /* ── Badges ──────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold;
+  }
+
+  .badge-red {
+    @apply badge bg-red-50 text-red-600 border border-red-100;
+  }
+
+  .badge-green {
+    @apply badge bg-green-50 text-green-700 border border-green-100;
+  }
+
+  .badge-yellow {
+    @apply badge bg-amber-50 text-amber-700 border border-amber-100;
+  }
+
+  .badge-blue {
+    @apply badge bg-sky-50 text-sky-700 border border-sky-200;
+  }
+
+  .badge-purple {
+    @apply badge bg-purple-50 text-purple-700 border border-purple-100;
+  }
+
+  .badge-gray {
+    @apply badge bg-gray-100 text-gray-600 border border-gray-200;
+  }
+
+  .badge-orange {
+    @apply badge bg-orange-50 text-orange-700 border border-orange-100;
+  }
+
+  /* ── Priority ────────────────────────────────────────── */
+  .priority-high {
+    @apply text-red-500 bg-red-50 border border-red-100 badge;
+  }
+
+  .priority-medium {
+    @apply text-orange-600 bg-orange-50 border border-orange-100 badge;
+  }
+
+  .priority-low {
+    @apply text-green-600 bg-green-50 border border-green-100 badge;
+  }
+
+  /* ── Buttons ─────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-sm transition-all duration-200;
+  }
+
+  .btn-primary {
+    @apply btn bg-sky-600 hover:bg-sky-500 text-white shadow-sm shadow-sky-200;
+  }
+
+  .btn-dark {
+    @apply btn bg-gray-900 hover:bg-gray-800 text-white;
+  }
+
+  .btn-secondary {
+    @apply btn bg-white hover:bg-gray-50 text-gray-700 border border-gray-200;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-50 hover:bg-red-100 text-red-600 border border-red-200;
+  }
+
+  .btn-orange {
+    @apply btn bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-400 hover:to-red-400 text-white shadow-sm;
+  }
+
+  /* ── Inputs ──────────────────────────────────────────── */
+  .input-field {
+    @apply w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-transparent transition-all;
+  }
+
+  .select-field {
+    @apply input-field appearance-none cursor-pointer;
+  }
+
+  /* ── Tables ──────────────────────────────────────────── */
+  .table-wrapper {
+    @apply overflow-x-auto rounded-2xl border border-gray-100 bg-white;
+  }
+
+  .table {
+    @apply w-full text-sm text-left;
+  }
+
+  .table th {
+    @apply px-4 py-3 text-xs font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 border-b border-gray-100;
+  }
+
+  .table td {
+    @apply px-4 py-3.5 border-b border-gray-50 text-gray-700;
+  }
+
+  .table tr:last-child td {
+    @apply border-0;
+  }
+
+  .table tbody tr {
+    @apply hover:bg-sky-50/30 transition-colors duration-100;
+  }
+
+  /* ── Progress Bar ────────────────────────────────────── */
+  .progress-bar {
+    @apply h-1.5 rounded-full bg-gray-100 overflow-hidden;
+  }
+
+  .progress-fill {
+    @apply h-full rounded-full transition-all duration-500;
+  }
+
+  /* ── Announcement Banner ─────────────────────────────── */
+  .announce {
+    @apply bg-white border border-gray-100 rounded-2xl px-5 py-3.5 flex items-center gap-3 shadow-sm;
+  }
+}
