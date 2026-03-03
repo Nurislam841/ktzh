@@ -51,6 +51,8 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:latest
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
   build_frontend:
     name: Build & Push Frontend
@@ -86,6 +88,8 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:latest
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
   deploy:
     name: Deploy to VPS
