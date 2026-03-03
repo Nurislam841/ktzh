@@ -145,7 +145,7 @@ export default function DashboardPage() {
 
                 {/* Topbar */}
                 <header className="topbar">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 bg-gray-100/80 p-1.5 rounded-full shadow-inner">
                         {['Overview', 'Activity', 'Schedule', 'Events', 'Analytics'].map((t, i) => (
                             <span key={t} className={i === 0 ? 'nav-tab-active' : 'nav-tab'}>{t}</span>
                         ))}
@@ -165,9 +165,9 @@ export default function DashboardPage() {
 
                 <main className="page-content">
                     {/* Greeting */}
-                    <div className="mb-6">
-                        <h1 className="text-3xl font-bold text-gray-900">{greeting}, Dispatcher</h1>
-                        <p className="text-gray-500 mt-1">Stay on top of train schedules, monitor conflicts, and track rescheduling.</p>
+                    <div className="mb-8">
+                        <h1 className="text-4xl tracking-tight font-bold text-gray-900 mb-2">{greeting}, Dispatcher</h1>
+                        <p className="text-gray-500 text-lg">Stay on top of train schedules, monitor conflicts, and track rescheduling.</p>
                     </div>
 
                     {/* Banner */}
@@ -213,16 +213,16 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Board tabs + actions */}
-                    <div className="flex items-center justify-between mb-5">
-                        <div className="flex items-center gap-1 bg-white border border-gray-100 rounded-xl p-1 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-full p-1.5 shadow-inner">
                             {[
                                 { icon: LayoutGrid, label: 'Board' },
                                 { icon: Timer, label: 'Timeline' },
                                 { icon: ListTodo, label: 'Spreadsheet' },
                                 { icon: CalendarRange, label: 'Calendar' },
                             ].map((t, i) => (
-                                <span key={t.label} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer transition-colors ${i === 0 ? 'bg-gray-100 text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}>
-                                    <t.icon size={14} /> {t.label}
+                                <span key={t.label} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-all duration-300 ${i === 0 ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+                                    <t.icon size={16} /> {t.label}
                                 </span>
                             ))}
                         </div>
