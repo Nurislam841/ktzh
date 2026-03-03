@@ -2,12 +2,14 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["ktz"]
 }
 
 // ─────────────────────────────────────────────
@@ -18,6 +20,8 @@ enum TrackStatus {
   FREE
   OCCUPIED
   MAINTENANCE
+
+  @@schema("ktz")
 }
 
 enum LocomotiveStatus {
@@ -25,6 +29,8 @@ enum LocomotiveStatus {
   EN_ROUTE
   MAINTENANCE
   FAILED
+
+  @@schema("ktz")
 }
 
 enum CrewStatus {
@@ -32,12 +38,16 @@ enum CrewStatus {
   ASSIGNED
   RESTING
   UNAVAILABLE
+
+  @@schema("ktz")
 }
 
 enum TrainPriority {
   PASSENGER
   FREIGHT
   OTHER
+
+  @@schema("ktz")
 }
 
 enum TrainRunStatus {
@@ -46,6 +56,8 @@ enum TrainRunStatus {
   DEPARTED
   ARRIVED
   CANCELLED
+
+  @@schema("ktz")
 }
 
 enum OperationalEventType {
@@ -55,6 +67,8 @@ enum OperationalEventType {
   TRACK_BLOCKED
   MAINTENANCE_STARTED
   MAINTENANCE_ENDED
+
+  @@schema("ktz")
 }
 
 // ─────────────────────────────────────────────
@@ -73,6 +87,8 @@ model Station {
   trainRunsDest    TrainRun[]    @relation("DestStation")
   scheduleVersions ScheduleVersion[]
   events           OperationalEvent[]
+
+  @@schema("ktz")
 }
 
 model Track {
@@ -87,6 +103,7 @@ model Track {
   allocations Allocation[]
 
   @@index([stationId, status])
+  @@schema("ktz")
 }
 
 model Depot {
@@ -95,6 +112,8 @@ model Depot {
 
   locomotives Locomotive[]
   crews       Crew[]
+
+  @@schema("ktz")
 }
 
 model Locomotive {
@@ -113,6 +132,7 @@ model Locomotive {
   allocations     Allocation[]
 
   @@index([status, availableFrom])
+  @@schema("ktz")
 }
 
 model Crew {
@@ -126,6 +146,7 @@ model Crew {
   allocations Allocation[]
 
   @@index([status, availableFrom])
+  @@schema("ktz")
 }
 
 model Train {
@@ -134,6 +155,8 @@ model Train {
   priority TrainPriority @default(OTHER)
 
   trainRuns TrainRun[]
+
+  @@schema("ktz")
 }
 
 model TrainRun {
@@ -152,6 +175,7 @@ model TrainRun {
   allocations         Allocation[]
 
   @@index([scheduledDeparture])
+  @@schema("ktz")
 }
 
 model ScheduleVersion {
@@ -166,6 +190,8 @@ model ScheduleVersion {
   baseVersion ScheduleVersion?  @relation("VersionHistory", fields: [baseVersionId], references: [id])
   childVersions ScheduleVersion[] @relation("VersionHistory")
   allocations Allocation[]
+
+  @@schema("ktz")
 }
 
 model Allocation {
@@ -188,6 +214,7 @@ model Allocation {
 
   @@index([scheduleVersionId])
   @@index([trainRunId])
+  @@schema("ktz")
 }
 
 model OperationalEvent {
@@ -198,6 +225,8 @@ model OperationalEvent {
   createdAt DateTime             @default(now())
 
   station Station @relation(fields: [stationId], references: [id])
+
+  @@schema("ktz")
 }
 
 model AuditLog {
@@ -208,4 +237,6 @@ model AuditLog {
   entityId    String
   payload     Json     @default("{}")
   createdAt   DateTime @default(now())
+
+  @@schema("ktz")
 }

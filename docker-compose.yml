@@ -1,22 +1,4 @@
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: ktz_postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-ktz}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ktz_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-ktz_db}
-    ports:
-      - '5432:5432'
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ 'CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-ktz}' ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: ktz_redis
@@ -41,13 +23,10 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-ktz}:${POSTGRES_PASSWORD:-ktz_secret}@postgres:5432/${POSTGRES_DB:-ktz_db}
       REDIS_URL: redis://redis:6379
     ports:
       - '3001:3001'
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -68,5 +47,4 @@ services:
       - backend
 
 volumes:
-  postgres_data:
   redis_data:
