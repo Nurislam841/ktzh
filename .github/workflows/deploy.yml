@@ -128,7 +128,7 @@ jobs:
           echo "NODE_ENV=production" >> backend/.env
 
           # Create frontend env file
-          echo "NEXT_PUBLIC_API_URL=http://${{ env.SERVER_IP }}:3001" > frontend/.env
+          echo "NEXT_PUBLIC_API_URL=http://${{ env.SERVER_IP }}:11434" > frontend/.env
 
           # Setup repo name for image pulling
           echo "IMAGE_REPO=adilzhan17" > .env
