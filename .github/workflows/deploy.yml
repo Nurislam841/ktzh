@@ -118,6 +118,7 @@ jobs:
       - name: Execute deployment commands
         run: |
           ssh root@${{ env.SERVER_IP }} << 'ENDSSH'
+          set -e
           cd ${{ env.DEPLOY_DIR }}
 
           # Create backend env file
