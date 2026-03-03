@@ -134,6 +134,9 @@ jobs:
           # Setup repo name for image pulling
           echo "IMAGE_REPO=adilzhan17" > .env
 
+          # Login to GHCR on the VPS
+          echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
           # Pull latest images
           docker compose pull backend frontend
 
