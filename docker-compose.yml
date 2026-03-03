@@ -14,9 +14,6 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     image: ghcr.io/${IMAGE_REPO:-adilzhan17}/ktz-backend:latest
     container_name: ktz_backend
     restart: unless-stopped
@@ -31,9 +28,6 @@ services:
         condition: service_healthy
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
     image: ghcr.io/${IMAGE_REPO:-adilzhan17}/ktz-frontend:latest
     container_name: ktz_frontend
     restart: unless-stopped
