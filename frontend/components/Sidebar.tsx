@@ -25,8 +25,8 @@ export default function Sidebar({ stationId }: { stationId: string }) {
     return (
         <aside className="sidebar">
             {/* Logo */}
-            <div className="w-10 h-10 rounded-xl bg-sky-600 flex items-center justify-center text-white mb-6 shadow-lg shadow-sky-200">
-                <Train size={20} strokeWidth={2.5} />
+            <div className="w-12 h-12 rounded-[1.25rem] bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center text-white mb-8 shadow-lg shadow-gray-200/50 border border-gray-700">
+                <Train size={24} strokeWidth={2} />
             </div>
 
             {/* Main nav */}

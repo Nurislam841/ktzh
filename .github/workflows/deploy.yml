@@ -143,6 +143,10 @@ jobs:
           # Restart containers without pulling/building everything else from scratch
           docker compose up -d
 
+          # Push database schema to Supabase automatically
+          echo "Applying Prisma schema to Supabase..."
+          docker compose exec -T backend npx prisma db push --accept-data-loss
+
           # Cleanup old dangling images
           docker image prune -f
           ENDSSH
