@@ -2,7 +2,15 @@ import { IsEnum, IsNotEmpty, IsObject, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum OperationalEventTypeDto {
+    TRACK_CLOSURE = 'TRACK_CLOSURE',
     LOCOMOTIVE_FAILURE = 'LOCOMOTIVE_FAILURE',
+    CREW_ABSENCE = 'CREW_ABSENCE',
+    LATE_TRAIN = 'LATE_TRAIN',
+    MAINTENANCE = 'MAINTENANCE',
+    WEATHER = 'WEATHER',
+    CAPACITY_CONFLICT = 'CAPACITY_CONFLICT',
+
+    // Backward-compatible aliases for legacy clients
     CREW_UNAVAILABLE = 'CREW_UNAVAILABLE',
     TRAIN_DELAY = 'TRAIN_DELAY',
     TRACK_BLOCKED = 'TRACK_BLOCKED',

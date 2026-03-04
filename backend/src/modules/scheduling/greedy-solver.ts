@@ -21,6 +21,13 @@ const TRACK_OCCUPANCY_AFTER = 20; // minutes after departure
 const MAX_SHIFT_MINUTES = 180; // max reschedule shift
 const SHIFT_STEP_MINUTES = 5; // each retry step
 
+const CONFLICT_LABELS: Record<string, string> = {
+    track: 'путь',
+    locomotive: 'локомотив',
+    crew: 'бригада',
+    headway: 'интервал',
+};
+
 @Injectable()
 export class GreedySolver implements ISolver {
     async solve(input: SolverInput): Promise<SolverOutput> {
@@ -113,18 +120,18 @@ export class GreedySolver implements ISolver {
                     if (shiftApplied > 0 || run.currentDelayMinutes > 0) {
                         const reason =
                             run.currentDelayMinutes > 0
-                                ? `delay+${run.currentDelayMinutes}min`
-                                : `shift+${shiftApplied}min`;
+                                ? `задержка+${run.currentDelayMinutes}мин`
+                                : `сдвиг+${shiftApplied}мин`;
                         changes.push(
-                            `Train ${run.train.number}: departure shifted (${reason}) → ${plannedDeparture.toISOString()}`,
+                            `Поезд ${run.train.number}: отправление сдвинуто (${reason}) -> ${plannedDeparture.toISOString()}`,
                         );
                     }
 
                     notes = [
-                        track ? `Track: ${track.name}` : '',
-                        loco ? `Loco: ${loco.series}${loco.number}` : '',
-                        crew ? `Crew: ${crew.id.slice(0, 8)}` : '',
-                        shiftApplied > 0 ? `Shifted +${shiftApplied}min` : '',
+                        track ? `Путь: ${track.name}` : '',
+                        loco ? `Локомотив: ${loco.series}${loco.number}` : '',
+                        crew ? `Бригада: ${crew.id.slice(0, 8)}` : '',
+                        shiftApplied > 0 ? `Сдвиг +${shiftApplied}мин` : '',
                     ]
                         .filter(Boolean)
                         .join(' | ');
@@ -133,6 +140,12 @@ export class GreedySolver implements ISolver {
                         trainRunId: run.id,
                         plannedDeparture,
                         plannedArrival,
+                        slotStatus:
+                            shiftApplied === 0 && run.currentDelayMinutes === 0
+                                ? 'IMMEDIATE'
+                                : shiftApplied > 0
+                                    ? 'WAITING_QUEUE'
+                                    : 'ASSIGNED',
                         assignedTrackId: track.id,
                         assignedLocomotiveId: loco.id,
                         assignedCrewId: crew.id,
@@ -173,20 +186,21 @@ export class GreedySolver implements ISolver {
                 if (!loco) conflicts.locomotive = true;
                 if (!crew) conflicts.crew = true;
 
-                notes = `UNRESOLVED after max shift ${MAX_SHIFT_MINUTES}min. Conflicts: ${Object.entries(conflicts)
+                notes = `НЕ РЕШЕНО после максимального сдвига ${MAX_SHIFT_MINUTES}мин. Конфликты: ${Object.entries(conflicts)
                         .filter(([, v]) => v)
-                        .map(([k]) => k)
-                        .join(', ') || 'none'
+                        .map(([k]) => CONFLICT_LABELS[k] ?? k)
+                        .join(', ') || 'нет'
                     }`;
 
                 changes.push(
-                    `Train ${run.train.number}: UNRESOLVED conflict (${notes})`,
+                    `Поезд ${run.train.number}: нерешенный конфликт (${notes})`,
                 );
 
                 allocations.push({
                     trainRunId: run.id,
                     plannedDeparture: depFallback,
                     plannedArrival: arrFallback,
+                    slotStatus: 'WAITING_QUEUE',
                     assignedTrackId: track?.id ?? null,
                     assignedLocomotiveId: loco?.id ?? null,
                     assignedCrewId: crew?.id ?? null,
@@ -211,7 +225,7 @@ export class GreedySolver implements ISolver {
         // Top 5 changes summary
         const summary = changes.slice(0, 5);
         if (changes.length > 5) {
-            summary.push(`...and ${changes.length - 5} more changes`);
+            summary.push(`...и еще ${changes.length - 5} изменений`);
         }
 
         return { allocations, summary, totalWeightedDelayMinutes };

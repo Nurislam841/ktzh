@@ -26,9 +26,9 @@ enum TrackStatus {
 
 enum LocomotiveStatus {
   AVAILABLE
-  EN_ROUTE
+  ASSIGNED
+  IN_TRANSIT
   MAINTENANCE
-  FAILED
 
   @@schema("ktz")
 }
@@ -52,16 +52,53 @@ enum TrainPriority {
 
 enum TrainRunStatus {
   PLANNED
-  ACTIVE
+  READY
+  WAITING_SLOT
+  LOCO_ASSIGNED
+  CREW_CONFIRMED
+  DELAYED
   DEPARTED
-  ARRIVED
   CANCELLED
+  // Legacy values kept for backward compatibility
+  ACTIVE
+  ARRIVED
+
+  @@schema("ktz")
+}
+
+enum DepartureSlotStatus {
+  IMMEDIATE
+  ASSIGNED
+  WAITING_QUEUE
+
+  @@schema("ktz")
+}
+
+enum ScheduleApprovalMode {
+  AUTOMATIC
+  MANUAL
+
+  @@schema("ktz")
+}
+
+enum ScheduleApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
 
   @@schema("ktz")
 }
 
 enum OperationalEventType {
+  TRACK_CLOSURE
   LOCOMOTIVE_FAILURE
+  CREW_ABSENCE
+  LATE_TRAIN
+  MAINTENANCE
+  WEATHER
+  CAPACITY_CONFLICT
+
+  // Backward-compatible aliases for legacy clients
   CREW_UNAVAILABLE
   TRAIN_DELAY
   TRACK_BLOCKED
@@ -153,8 +190,13 @@ model Train {
   id       String        @id @default(uuid())
   number   String        @unique
   priority TrainPriority @default(OTHER)
+  route    String?
+  frequency String?
+  wagons   Int?
+  carrier  String?
 
   trainRuns TrainRun[]
+  schedules Schedule[]
 
   @@schema("ktz")
 }
@@ -185,6 +227,10 @@ model ScheduleVersion {
   createdByUserId String?
   reason          String
   baseVersionId   String?
+  approvalMode    ScheduleApprovalMode   @default(AUTOMATIC)
+  approvalStatus  ScheduleApprovalStatus @default(APPROVED)
+  approvedAt      DateTime?
+  approvedByUserId String?
 
   station     Station      @relation(fields: [stationId], references: [id])
   baseVersion ScheduleVersion?  @relation("VersionHistory", fields: [baseVersionId], references: [id])
@@ -200,6 +246,7 @@ model Allocation {
   trainRunId          String
   plannedDeparture    DateTime
   plannedArrival      DateTime
+  slotStatus          DepartureSlotStatus @default(ASSIGNED)
   assignedTrackId     String?
   assignedLocomotiveId String?
   assignedCrewId      String?
@@ -225,6 +272,55 @@ model OperationalEvent {
   createdAt DateTime             @default(now())
 
   station Station @relation(fields: [stationId], references: [id])
+
+  @@schema("ktz")
+}
+
+model Schedule {
+  id            String   @id @default(uuid())
+  trainId       String?
+  trainNumber   String
+  station       String
+  arrival       DateTime?
+  departure     DateTime?
+  arrivalRaw    String?
+  departureRaw  String?
+  operation     String?
+  sourceFile    String
+  sourceSheet   String?
+  sourceGroup   String?
+  createdAt     DateTime @default(now())
+
+  train Train? @relation(fields: [trainId], references: [id])
+
+  @@index([trainNumber])
+  @@index([station])
+  @@index([departure])
+  @@schema("ktz")
+}
+
+model ServiceSegment {
+  id           String   @id @default(uuid())
+  locoSeries   String
+  startStation String
+  endStation   String
+  sourceFile   String
+  createdAt    DateTime @default(now())
+
+  @@index([locoSeries])
+  @@index([startStation, endStation])
+  @@schema("ktz")
+}
+
+model RefuelingPoint {
+  id         String   @id @default(uuid())
+  station    String   @unique
+  fuel       Boolean?
+  sand       Boolean?
+  water      Boolean?
+  notes      String?
+  sourceFile String
+  createdAt  DateTime @default(now())
 
   @@schema("ktz")
 }

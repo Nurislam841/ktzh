@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SchedulingService } from '../scheduling/scheduling.service';
+import { ImportDataService } from '../import-data/import-data.service';
 const addHours = (d: Date, h: number) => new Date(d.getTime() + h * 3_600_000);
 const addMinutes = (d: Date, m: number) => new Date(d.getTime() + m * 60_000);
 const subHours = (d: Date, h: number) => new Date(d.getTime() - h * 3_600_000);
@@ -10,13 +11,32 @@ export class AdminService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly scheduling: SchedulingService,
+        private readonly importDataService: ImportDataService,
     ) { }
 
-    async seed(adminToken: string) {
+    private ensureToken(adminToken: string) {
         const expectedToken = process.env.ADMIN_TOKEN ?? 'super-secret-admin-token-change-me';
-        if (adminToken !== expectedToken) {
-            throw new UnauthorizedException('Invalid admin token');
-        }
+        if (adminToken !== expectedToken) throw new UnauthorizedException('Неверный токен администратора');
+    }
+
+    async seed(
+        adminToken: string,
+        options?: {
+            tracks?: number;
+            locomotives?: number;
+            crews?: number;
+            trainRuns?: number;
+            windowHours?: number;
+        },
+    ) {
+        this.ensureToken(adminToken);
+
+        const tracksCount = options?.tracks ?? 8;
+        const locomotivesCount = options?.locomotives ?? 24;
+        const crewsCount = options?.crews ?? 36;
+        const trainRunsCount = options?.trainRuns ?? 60;
+        const windowHours = options?.windowHours ?? 6;
+        const windowMinutes = Math.max(60, windowHours * 60);
 
         // Clear existing data for idempotency
         await this.prisma.auditLog.deleteMany();
@@ -33,16 +53,16 @@ export class AdminService {
 
         // 1. Create Station
         const station = await this.prisma.station.create({
-            data: { name: 'Almaty-1', code: 'ALA1' },
+            data: { name: 'Алматы-1', code: 'ALA1' },
         });
 
         // 2. Create 6 Tracks
         const tracks = await Promise.all(
-            Array.from({ length: 6 }, (_, i) =>
+            Array.from({ length: tracksCount }, (_, i) =>
                 this.prisma.track.create({
                     data: {
                         stationId: station.id,
-                        name: `Track ${i + 1}`,
+                        name: `Путь ${i + 1}`,
                         status: 'FREE',
                     },
                 }),
@@ -51,14 +71,14 @@ export class AdminService {
 
         // 3. Create Depot
         const depot = await this.prisma.depot.create({
-            data: { name: 'Almaty Depot' },
+            data: { name: 'Алматинское депо' },
         });
 
         const now = new Date();
 
         // 4. Create 10 Locomotives
         const locomotives = await Promise.all(
-            Array.from({ length: 10 }, (_, i) =>
+            Array.from({ length: locomotivesCount }, (_, i) =>
                 this.prisma.locomotive.create({
                     data: {
                         series: i % 2 === 0 ? 'VL80' : 'TE116',
@@ -74,7 +94,7 @@ export class AdminService {
 
         // 5. Create 20 Crews
         const crews = await Promise.all(
-            Array.from({ length: 20 }, (_, i) =>
+            Array.from({ length: crewsCount }, (_, i) =>
                 this.prisma.crew.create({
                     data: {
                         depotId: depot.id,
@@ -91,11 +111,11 @@ export class AdminService {
         const priorities = ['PASSENGER', 'FREIGHT', 'OTHER'] as const;
 
         const destinationStation = await this.prisma.station.create({
-            data: { name: 'Astana', code: 'NQZ' },
+            data: { name: 'Астана', code: 'NQZ' },
         });
 
         const trainRuns = [];
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < trainRunsCount; i++) {
             const priority = priorities[i % 3];
             const train = await this.prisma.train.create({
                 data: {
@@ -104,8 +124,8 @@ export class AdminService {
                 },
             });
 
-            // Spread departures across 0–6h from now
-            const depOffset = (i * 12) % 360; // 0 to 348 minutes
+            // Spread departures across planning window
+            const depOffset = (i * 12) % windowMinutes;
             const scheduledDeparture = addMinutes(now, depOffset);
             const scheduledArrival = addMinutes(scheduledDeparture, 45 + (i % 3) * 15);
 
@@ -126,12 +146,12 @@ export class AdminService {
         // 7. Run initial scheduler to create first ScheduleVersion
         const { versionId, summary } = await this.scheduling.runRescheduler(
             station.id,
-            'Initial plan',
+            'Начальный план',
             null,
         );
 
         return {
-            message: 'Seed complete',
+            message: 'Демо-данные заполнены',
             stationId: station.id,
             initialVersionId: versionId,
             summary,
@@ -140,7 +160,37 @@ export class AdminService {
                 locomotives: locomotives.length,
                 crews: crews.length,
                 trainRuns: trainRuns.length,
+                windowHours,
             },
+        };
+    }
+
+    async importData(adminToken: string, dataDir?: string) {
+        this.ensureToken(adminToken);
+        const imported = await this.importDataService.importAll(dataDir);
+        return {
+            message: 'Импорт данных завершен',
+            imported,
+        };
+    }
+
+    async bootstrapOperationalData(adminToken: string) {
+        this.ensureToken(adminToken);
+        const bootstrapped = await this.importDataService.bootstrapOperationalData();
+        return {
+            message: 'Операционные данные подготовлены',
+            bootstrapped,
+        };
+    }
+
+    async importAndBootstrap(adminToken: string, dataDir?: string) {
+        this.ensureToken(adminToken);
+        const imported = await this.importDataService.importAll(dataDir);
+        const bootstrapped = await this.importDataService.bootstrapOperationalData();
+        return {
+            message: 'Импорт и подготовка завершены',
+            imported,
+            bootstrapped,
         };
     }
 }
