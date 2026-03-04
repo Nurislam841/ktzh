@@ -2,13 +2,13 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-    title: 'KTZ Node Control | Railway Rescheduling',
-    description: 'Dynamic Railway Node Rescheduling System',
+    title: 'KTZ Node Control | Перепланирование железнодорожного узла',
+    description: 'Система динамического перепланирования железнодорожного узла',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en">
+        <html lang="ru">
             <head>
                 <link rel="preconnect" href="https://fonts.googleapis.com" />
                 <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

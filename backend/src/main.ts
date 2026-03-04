@@ -17,8 +17,8 @@ async function bootstrap() {
     );
 
     const config = new DocumentBuilder()
-        .setTitle('KTZ Railway Node API')
-        .setDescription('Dynamic Railway Node Rescheduling System')
+        .setTitle('KTZ API управления узлом')
+        .setDescription('Система динамического перепланирования железнодорожного узла')
         .setVersion('1.0')
         .addBearerAuth()
         .build();
@@ -27,7 +27,7 @@ async function bootstrap() {
 
     const port = process.env.PORT ?? 3001;
     await app.listen(port);
-    console.log(`🚂 KTZ Backend running on http://localhost:${port}`);
-    console.log(`📖 Swagger docs: http://localhost:${port}/api/docs`);
+    console.log(`KTZ Backend запущен: http://localhost:${port}`);
+    console.log(`Swagger-документация: http://localhost:${port}/api/docs`);
 }
 bootstrap();

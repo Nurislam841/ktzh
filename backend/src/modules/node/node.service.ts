@@ -5,10 +5,43 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class NodeService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async getOverview(stationId: string, from?: string, to?: string) {
+    async listStations() {
+        const stations = await this.prisma.station.findMany({
+            select: {
+                id: true,
+                name: true,
+                code: true,
+                _count: {
+                    select: {
+                        scheduleVersions: true,
+                        trainRunsOrigin: true,
+                        locomotives: true,
+                        tracks: true,
+                    },
+                },
+            },
+            orderBy: { name: 'asc' },
+        });
+
+        return {
+            stations: stations.map((s) => ({
+                id: s.id,
+                name: s.name,
+                code: s.code,
+                versions: s._count.scheduleVersions,
+                trainRuns: s._count.trainRunsOrigin,
+                locomotives: s._count.locomotives,
+                tracks: s._count.tracks,
+                active: s._count.scheduleVersions > 0 || s._count.trainRunsOrigin > 0,
+            })),
+        };
+    }
+
+    async getOverview(stationId: string, from?: string, to?: string, hours?: string) {
         const now = new Date();
         const fromDate = from ? new Date(from) : now;
-        const toDate = to ? new Date(to) : new Date(now.getTime() + 6 * 60 * 60_000);
+        const hoursWindow = Number.isFinite(Number(hours)) && Number(hours) > 0 ? Number(hours) : 6;
+        const toDate = to ? new Date(to) : new Date(fromDate.getTime() + hoursWindow * 60 * 60_000);
 
         // Get latest version for this station
         const latestVersion = await this.prisma.scheduleVersion.findFirst({
@@ -67,6 +100,7 @@ export class NodeService {
             },
             plannedDeparture: a.plannedDeparture,
             plannedArrival: a.plannedArrival,
+            slotStatus: a.slotStatus,
             track: a.assignedTrack ? { id: a.assignedTrack.id, name: a.assignedTrack.name } : null,
             locomotive: a.assignedLocomotive
                 ? {
@@ -89,6 +123,69 @@ export class NodeService {
                 name: t.name,
                 status: t.status,
             })),
+        };
+    }
+
+    async getResources(stationId: string) {
+        const [tracks, locomotives, crews] = await Promise.all([
+            this.prisma.track.findMany({
+                where: { stationId },
+                orderBy: { name: 'asc' },
+                select: {
+                    id: true,
+                    name: true,
+                    status: true,
+                    maintenanceFrom: true,
+                    maintenanceTo: true,
+                },
+            }),
+            this.prisma.locomotive.findMany({
+                where: { locationStationId: stationId },
+                orderBy: [{ status: 'asc' }, { availableFrom: 'asc' }],
+                select: {
+                    id: true,
+                    series: true,
+                    number: true,
+                    status: true,
+                    availableFrom: true,
+                    maintenanceFrom: true,
+                    maintenanceTo: true,
+                },
+            }),
+            this.prisma.crew.findMany({
+                where: {
+                    depot: {
+                        locomotives: {
+                            some: { locationStationId: stationId },
+                        },
+                    },
+                },
+                orderBy: [{ status: 'asc' }, { availableFrom: 'asc' }],
+                select: {
+                    id: true,
+                    status: true,
+                    availableFrom: true,
+                    requiredNoticeMinutes: true,
+                },
+            }),
+        ]);
+
+        return {
+            stationId,
+            summary: {
+                tracks: tracks.length,
+                locomotives: locomotives.length,
+                crews: crews.length,
+                availableTracks: tracks.filter((t) => t.status === 'FREE').length,
+                availableLocomotives: locomotives.filter((l) => l.status === 'AVAILABLE').length,
+                availableCrews: crews.filter((c) => c.status === 'AVAILABLE').length,
+            },
+            tracks,
+            locomotives: locomotives.map((l) => ({
+                ...l,
+                label: `${l.series}${l.number}`,
+            })),
+            crews,
         };
     }
 }

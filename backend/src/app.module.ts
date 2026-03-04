@@ -7,6 +7,8 @@ import { ScheduleModule } from './modules/schedule/schedule.module';
 import { EventsModule } from './modules/events/events.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
+import { ImportDataModule } from './modules/import-data/import-data.module';
+import { ConflictDetectionModule } from './modules/conflict-detection/conflict-detection.module';
 
 @Module({
     imports: [
@@ -18,6 +20,8 @@ import { SchedulingModule } from './modules/scheduling/scheduling.module';
         EventsModule,
         AnalyticsModule,
         SchedulingModule,
+        ImportDataModule,
+        ConflictDetectionModule,
     ],
 })
 export class AppModule { }

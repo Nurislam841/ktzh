@@ -1,15 +1,28 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class ScheduleService {
     constructor(private readonly prisma: PrismaService) { }
 
-    async listVersions(stationId: string, page = 1, limit = 20) {
+    async listVersions(
+        stationId: string,
+        page = 1,
+        limit = 20,
+        filters?: {
+            approvalMode?: 'AUTOMATIC' | 'MANUAL';
+            approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+        },
+    ) {
         const skip = (page - 1) * limit;
+        const where: Prisma.ScheduleVersionWhereInput = { stationId };
+        if (filters?.approvalMode) where.approvalMode = filters.approvalMode;
+        if (filters?.approvalStatus) where.approvalStatus = filters.approvalStatus;
+
         const [versions, total] = await Promise.all([
             this.prisma.scheduleVersion.findMany({
-                where: { stationId },
+                where,
                 orderBy: { createdAt: 'desc' },
                 skip,
                 take: limit,
@@ -19,10 +32,14 @@ export class ScheduleService {
                     reason: true,
                     baseVersionId: true,
                     createdByUserId: true,
+                    approvalMode: true,
+                    approvalStatus: true,
+                    approvedAt: true,
+                    approvedByUserId: true,
                     _count: { select: { allocations: true } },
                 },
             }),
-            this.prisma.scheduleVersion.count({ where: { stationId } }),
+            this.prisma.scheduleVersion.count({ where }),
         ]);
         return { versions, total, page, limit };
     }
@@ -42,8 +59,71 @@ export class ScheduleService {
                 },
             },
         });
-        if (!version) throw new NotFoundException(`Version ${id} not found`);
+        if (!version) throw new NotFoundException(`Версия ${id} не найдена`);
         return version;
+    }
+
+    async setApprovalMode(id: string, mode: 'AUTOMATIC' | 'MANUAL') {
+        await this.ensureVersionExists(id);
+        if (mode === 'AUTOMATIC') {
+            return this.prisma.scheduleVersion.update({
+                where: { id },
+                data: {
+                    approvalMode: mode,
+                    approvalStatus: 'APPROVED',
+                    approvedAt: new Date(),
+                    approvedByUserId: 'system:auto',
+                },
+            });
+        }
+
+        return this.prisma.scheduleVersion.update({
+            where: { id },
+            data: {
+                approvalMode: mode,
+                approvalStatus: 'PENDING',
+                approvedAt: null,
+                approvedByUserId: null,
+            },
+        });
+    }
+
+    async approveVersion(id: string, approvedByUserId = 'dispatcher') {
+        await this.ensureVersionExists(id);
+        return this.prisma.scheduleVersion.update({
+            where: { id },
+            data: {
+                approvalStatus: 'APPROVED',
+                approvedAt: new Date(),
+                approvedByUserId,
+            },
+        });
+    }
+
+    async rejectVersion(id: string, rejectedByUserId = 'dispatcher', reason?: string) {
+        await this.ensureVersionExists(id);
+        const rejected = await this.prisma.scheduleVersion.update({
+            where: { id },
+            data: {
+                approvalStatus: 'REJECTED',
+                approvedAt: new Date(),
+                approvedByUserId: rejectedByUserId,
+            },
+        });
+
+        await this.prisma.auditLog.create({
+            data: {
+                action: 'SCHEDULE_REJECTED',
+                entityType: 'ScheduleVersion',
+                entityId: id,
+                payload: {
+                    rejectedByUserId,
+                    reason: reason ?? null,
+                } as any,
+            },
+        });
+
+        return rejected;
     }
 
     async compareVersions(fromVersionId: string, toVersionId: string) {
@@ -134,6 +214,7 @@ export class ScheduleService {
         return {
             plannedDeparture: a.plannedDeparture,
             plannedArrival: a.plannedArrival,
+            slotStatus: a.slotStatus,
             track: a.assignedTrack?.name ?? null,
             locomotive: a.assignedLocomotive
                 ? `${a.assignedLocomotive.series}${a.assignedLocomotive.number}`
@@ -142,5 +223,13 @@ export class ScheduleService {
             conflictFlags: a.conflictFlags,
             notes: a.notes,
         };
+    }
+
+    private async ensureVersionExists(id: string) {
+        const version = await this.prisma.scheduleVersion.findUnique({
+            where: { id },
+            select: { id: true },
+        });
+        if (!version) throw new NotFoundException(`Версия ${id} не найдена`);
     }
 }

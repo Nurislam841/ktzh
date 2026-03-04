@@ -1,26 +1,39 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
     LayoutDashboard,
     Map,
     Zap,
     ClipboardList,
+    Database,
     HelpCircle,
     LogOut,
     Train,
 } from 'lucide-react';
 
 const sidebarItems = [
-    { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', id: 'dashboard' },
-    { href: '/node', icon: Map, label: 'Node View', id: 'node' },
-    { href: '/simulation', icon: Zap, label: 'Simulation', id: 'simulation' },
-    { href: '/versions', icon: ClipboardList, label: 'Versions', id: 'versions' },
+    { href: '/dashboard', icon: LayoutDashboard, label: 'Панель', id: 'dashboard' },
+    { href: '/node', icon: Map, label: 'Узел', id: 'node' },
+    { href: '/resources', icon: Database, label: 'Ресурсы', id: 'resources' },
+    { href: '/simulation', icon: Zap, label: 'Симуляция', id: 'simulation' },
+    { href: '/versions', icon: ClipboardList, label: 'Версии', id: 'versions' },
 ];
 
 export default function Sidebar({ stationId }: { stationId: string }) {
     const pathname = usePathname();
+    const router = useRouter();
+
+    const handleHelp = () => {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        window.open(`${apiUrl}/api/docs`, '_blank', 'noopener,noreferrer');
+    };
+
+    const handleLogout = () => {
+        window.localStorage.removeItem('ktz_station_id');
+        router.push('/dashboard');
+    };
 
     return (
         <aside className="sidebar">
@@ -49,10 +62,10 @@ export default function Sidebar({ stationId }: { stationId: string }) {
 
             {/* Bottom */}
             <div className="flex flex-col items-center gap-1">
-                <button title="Help" className="sidebar-icon">
+                <button title="Помощь" className="sidebar-icon" onClick={handleHelp}>
                     <HelpCircle size={20} />
                 </button>
-                <button title="Exit" className="sidebar-icon">
+                <button title="Выход" className="sidebar-icon" onClick={handleLogout}>
                     <LogOut size={20} />
                 </button>
             </div>

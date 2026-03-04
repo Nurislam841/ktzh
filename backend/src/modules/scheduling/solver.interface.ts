@@ -21,6 +21,7 @@ export interface AllocationDraft {
     trainRunId: string;
     plannedDeparture: Date;
     plannedArrival: Date;
+    slotStatus: 'IMMEDIATE' | 'ASSIGNED' | 'WAITING_QUEUE';
     assignedTrackId: string | null;
     assignedLocomotiveId: string | null;
     assignedCrewId: string | null;

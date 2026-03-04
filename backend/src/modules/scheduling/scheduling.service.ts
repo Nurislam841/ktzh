@@ -1,11 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GreedySolver } from './greedy-solver';
-import { SolverInput, SolverOutput } from './solver.interface';
-import { Prisma } from '@prisma/client';
+import { AllocationDraft, SolverInput, SolverOutput } from './solver.interface';
+import { Prisma, TrainRunStatus } from '@prisma/client';
 
 @Injectable()
 export class SchedulingService {
+    private readonly reschedulableStatuses: TrainRunStatus[] = [
+        'PLANNED',
+        'READY',
+        'WAITING_SLOT',
+        'LOCO_ASSIGNED',
+        'CREW_CONFIRMED',
+        'DELAYED',
+        'ACTIVE',
+    ];
+
     constructor(
         private readonly prisma: PrismaService,
         private readonly solver: GreedySolver,
@@ -28,7 +38,7 @@ export class SchedulingService {
                 where: {
                     originStationId: stationId,
                     scheduledDeparture: { gte: now, lte: planningTo },
-                    status: { in: ['PLANNED', 'ACTIVE'] },
+                    status: { in: this.reschedulableStatuses },
                 },
                 include: { train: { select: { id: true, number: true, priority: true } } },
                 orderBy: { scheduledDeparture: 'asc' },
@@ -55,6 +65,7 @@ export class SchedulingService {
         };
 
         const output: SolverOutput = await this.solver.solve(input);
+        const trainRunById = new Map(trainRuns.map((run) => [run.id, run]));
 
         // Create new ScheduleVersion + Allocations in a transaction
         const newVersion = await this.prisma.$transaction(async (tx) => {
@@ -72,6 +83,7 @@ export class SchedulingService {
                 trainRunId: a.trainRunId,
                 plannedDeparture: a.plannedDeparture,
                 plannedArrival: a.plannedArrival,
+                slotStatus: a.slotStatus,
                 assignedTrackId: a.assignedTrackId,
                 assignedLocomotiveId: a.assignedLocomotiveId,
                 assignedCrewId: a.assignedCrewId,
@@ -80,6 +92,26 @@ export class SchedulingService {
             }));
 
             await tx.allocation.createMany({ data: allocationData });
+            await Promise.all(
+                output.allocations.map((allocation) => {
+                    const run = trainRunById.get(allocation.trainRunId);
+                    if (!run) return Promise.resolve();
+                    const newDelayMinutes = Math.max(
+                        0,
+                        Math.round(
+                            (allocation.plannedDeparture.getTime() - run.scheduledDeparture.getTime()) /
+                            60_000,
+                        ),
+                    );
+                    return tx.trainRun.update({
+                        where: { id: allocation.trainRunId },
+                        data: {
+                            status: this.deriveTrainRunStatus(allocation),
+                            currentDelayMinutes: newDelayMinutes,
+                        },
+                    });
+                }),
+            );
 
             return version;
         });
@@ -102,5 +134,14 @@ export class SchedulingService {
             where: { stationId },
             orderBy: { createdAt: 'desc' },
         });
+    }
+
+    private deriveTrainRunStatus(allocation: AllocationDraft): TrainRunStatus {
+        const hasConflict = Object.values(allocation.conflictFlags ?? {}).some(Boolean);
+        if (hasConflict) return 'DELAYED';
+        if (!allocation.assignedTrackId) return 'WAITING_SLOT';
+        if (allocation.assignedLocomotiveId && allocation.assignedCrewId) return 'CREW_CONFIRMED';
+        if (allocation.assignedLocomotiveId) return 'LOCO_ASSIGNED';
+        return 'READY';
     }
 }
