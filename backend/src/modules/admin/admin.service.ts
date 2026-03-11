@@ -117,6 +117,9 @@ export class AdminService {
         const trainRuns = [];
         for (let i = 0; i < trainRunsCount; i++) {
             const priority = priorities[i % 3];
+            const operationScenario = i % 4 === 0 ? 'FORMATION' : 'TRANSIT';
+            const requiresCrewChange = operationScenario === 'FORMATION' || i % 5 !== 0;
+            const requiresLocoChange = operationScenario === 'FORMATION' || i % 6 === 0;
             const train = await this.prisma.train.create({
                 data: {
                     number: `${700 + i}`,
@@ -138,6 +141,9 @@ export class AdminService {
                     scheduledArrival,
                     currentDelayMinutes: i % 5 === 0 ? 10 : 0, // some trains already delayed
                     status: 'PLANNED',
+                    operationScenario,
+                    requiresCrewChange,
+                    requiresLocoChange,
                 },
             });
             trainRuns.push(run);

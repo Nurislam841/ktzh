@@ -74,6 +74,28 @@ export async function getNodeResources(stationId: string) {
     return fetchApi(`/node/resources?${params.toString()}`);
 }
 
+export async function getNodeDecisionQueue(stationId: string, hours?: number) {
+    const params = new URLSearchParams({ stationId });
+    if (hours) params.set('hours', String(hours));
+    return fetchApi(`/node/decision-queue?${params.toString()}`);
+}
+
+export async function getCrewCalls(stationId: string, hours?: number) {
+    const params = new URLSearchParams({ stationId });
+    if (hours) params.set('hours', String(hours));
+    return fetchApi(`/crew-calls?${params.toString()}`);
+}
+
+export async function updateCrewCallStatus(
+    id: string,
+    data: { status: 'PLANNED' | 'NOTIFIED' | 'CONFIRMED' | 'MISSED' | 'CANCELLED'; notes?: string },
+) {
+    return fetchApi(`/crew-calls/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+    });
+}
+
 export async function getStations() {
     return fetchApi<{ stations: Array<{ id: string; name: string; code?: string | null; versions: number; trainRuns: number; locomotives: number; tracks: number; active: boolean }> }>('/node/stations');
 }
@@ -207,4 +229,74 @@ export async function getAssistantInsights(stationId: string) {
 export async function getDashboardNotifications(stationId: string) {
     const params = new URLSearchParams({ stationId });
     return fetchApi(`/analytics/notifications?${params.toString()}`);
+}
+
+// ─── Binding Domain ──────────────────────────────────────────────────
+export async function getBindings(filters?: {
+    periodId?: string;
+    stationId?: string;
+    status?: string;
+    skip?: number;
+    take?: number;
+}) {
+    const params = new URLSearchParams();
+    if (filters?.periodId) params.set('periodId', filters.periodId);
+    if (filters?.stationId) params.set('stationId', filters.stationId);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.skip) params.set('skip', String(filters.skip));
+    if (filters?.take) params.set('take', String(filters.take));
+    return fetchApi<{ items: any[]; total: number }>(`/api/v1/bindings?${params.toString()}`);
+}
+
+export async function getBindingDetail(bindingId: string) {
+    return fetchApi(`/api/v1/bindings/${bindingId}`);
+}
+
+export async function runBindingConflictCheck(periodId: string) {
+    return fetchApi<{ checked: number; conflicts: any[] }>('/api/v1/conflicts/check', {
+        method: 'POST',
+        body: JSON.stringify({ periodId }),
+    });
+}
+
+export async function getBindingConflicts(filters?: {
+    periodId?: string;
+    code?: string;
+    bindingId?: string;
+}) {
+    const params = new URLSearchParams();
+    if (filters?.periodId) params.set('periodId', filters.periodId);
+    if (filters?.code) params.set('code', filters.code);
+    if (filters?.bindingId) params.set('bindingId', filters.bindingId);
+    return fetchApi<any[]>(`/api/v1/conflicts?${params.toString()}`);
+}
+
+export async function calculateBindingKpi(periodId: string, scopeType?: string, scopeId?: string) {
+    return fetchApi('/api/v1/kpi/calculate', {
+        method: 'POST',
+        body: JSON.stringify({ periodId, scopeType, scopeId }),
+    });
+}
+
+export async function getBindingKpi(periodId: string, scopeType?: string) {
+    const params = new URLSearchParams({ periodId });
+    if (scopeType) params.set('scopeType', scopeType);
+    return fetchApi<any[]>(`/api/v1/kpi?${params.toString()}`);
+}
+
+export async function getConflictsSummary(periodId: string) {
+    return fetchApi<{ periodId: string; total: number; byCode: Record<string, number> }>(
+        `/api/v1/kpi/conflicts-summary?periodId=${periodId}`,
+    );
+}
+
+export async function getLocomotiveModels() {
+    return fetchApi<any[]>('/api/v1/reference/locomotive-models');
+}
+
+export async function getServiceShoulders(filters?: { depotId?: string; modelId?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.depotId) params.set('depotId', filters.depotId);
+    if (filters?.modelId) params.set('modelId', filters.modelId);
+    return fetchApi<any[]>(`/api/v1/reference/shoulders?${params.toString()}`);
 }

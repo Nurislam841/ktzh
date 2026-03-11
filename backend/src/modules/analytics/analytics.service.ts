@@ -29,6 +29,8 @@ export class AnalyticsService {
                 trackOccupancyRate: 0,
                 locomotiveUtilization: 0,
                 crewUtilization: 0,
+                avgIdleTimeMinutes: 0,
+                totalIdleLocos: 0,
             };
         }
 
@@ -39,10 +41,14 @@ export class AnalyticsService {
             },
         });
 
-        const [trackCount, locoCount, crewCount] = await Promise.all([
+        const [trackCount, locoCount, crewCount, availableLocomotives] = await Promise.all([
             this.prisma.track.count({ where: { stationId } }),
             this.prisma.locomotive.count({ where: { locationStationId: stationId } }),
             this.prisma.crew.count({ where: { depot: { locomotives: { some: { locationStationId: stationId } } } } }),
+            this.prisma.locomotive.findMany({ 
+                where: { locationStationId: stationId, status: 'AVAILABLE' },
+                select: { availableFrom: true }
+            })
         ]);
 
         const totalTrains = allocations.length;
@@ -83,6 +89,19 @@ export class AnalyticsService {
         const usedCrews = new Set(allocations.map((a) => a.assignedCrewId).filter(Boolean)).size;
         const crewUtilization = crewCount > 0 ? Math.round((usedCrews / crewCount) * 100) : 0;
 
+        // Idle metrics
+        const now = new Date();
+        let totalIdleMinutes = 0;
+        let totalIdleLocos = 0;
+        for (const loco of availableLocomotives) {
+            const idleMins = Math.floor((now.getTime() - loco.availableFrom.getTime()) / 60000);
+            if (idleMins > 0) {
+                totalIdleMinutes += idleMins;
+                totalIdleLocos++;
+            }
+        }
+        const avgIdleTimeMinutes = totalIdleLocos > 0 ? Math.round(totalIdleMinutes / totalIdleLocos) : 0;
+
         return {
             stationId,
             versionId: targetVersionId,
@@ -92,6 +111,8 @@ export class AnalyticsService {
             trackOccupancyRate,
             locomotiveUtilization,
             crewUtilization,
+            avgIdleTimeMinutes,
+            totalIdleLocos
         };
     }
 

@@ -7,7 +7,7 @@ import {
     ConflictFlags,
     TrainRunWithTrain,
 } from './solver.interface';
-import { Track } from '@prisma/client';
+import { Allocation, Crew, Locomotive, Track } from '@prisma/client';
 
 const PRIORITY_WEIGHTS: Record<string, number> = {
     PASSENGER: 3,
@@ -42,14 +42,23 @@ export class GreedySolver implements ISolver {
         });
 
         const allocations: AllocationDraft[] = [];
-        const usedLocomotiveIds = new Set<string>();
-        const usedCrewIds = new Set<string>();
+        const locomotiveAvailability = this.buildResourceAvailabilityMap(
+            locomotives,
+            input.baseAllocations,
+            'assignedLocomotiveId',
+        );
+        const crewAvailability = this.buildResourceAvailabilityMap(
+            crews,
+            input.baseAllocations,
+            'assignedCrewId',
+        );
 
         // Track occupancy map: trackId -> list of [occupyStart, occupyEnd] windows
         const trackOccupancy: Map<string, Array<[Date, Date]>> = new Map();
         for (const track of tracks) {
             trackOccupancy.set(track.id, []);
         }
+        this.registerBaseTrackOccupancy(trackOccupancy, input.baseAllocations);
 
         const changes: string[] = [];
 
@@ -90,13 +99,13 @@ export class GreedySolver implements ISolver {
                 );
                 const loco = this.findAvailableLocomotive(
                     input.locomotives,
-                    usedLocomotiveIds,
+                    locomotiveAvailability,
                     stationId,
                     tryDep,
                 );
                 const crew = this.findAvailableCrew(
                     input.crews,
-                    usedCrewIds,
+                    crewAvailability,
                     tryDep,
                 );
 
@@ -114,8 +123,8 @@ export class GreedySolver implements ISolver {
                     );
                     trackOccupancy.get(track.id)!.push([occStart, occEnd]);
 
-                    usedLocomotiveIds.add(loco.id);
-                    usedCrewIds.add(crew.id);
+                    locomotiveAvailability.set(loco.id, new Date(tryArr));
+                    crewAvailability.set(crew.id, new Date(tryArr));
 
                     if (shiftApplied > 0 || run.currentDelayMinutes > 0) {
                         const reason =
@@ -172,13 +181,13 @@ export class GreedySolver implements ISolver {
                 );
                 const loco = this.findAvailableLocomotive(
                     input.locomotives,
-                    usedLocomotiveIds,
+                    locomotiveAvailability,
                     stationId,
                     depFallback,
                 );
                 const crew = this.findAvailableCrew(
                     input.crews,
-                    usedCrewIds,
+                    crewAvailability,
                     depFallback,
                 );
 
@@ -276,8 +285,8 @@ export class GreedySolver implements ISolver {
     }
 
     private findAvailableLocomotive(
-        locos: { id: string; series: string; number: string; status: string; availableFrom: Date; locationStationId: string | null }[],
-        usedIds: Set<string>,
+        locos: Array<Pick<Locomotive, 'id' | 'series' | 'number' | 'status' | 'availableFrom' | 'locationStationId'>>,
+        availability: Map<string, Date>,
         stationId: string,
         dep: Date,
     ) {
@@ -285,29 +294,80 @@ export class GreedySolver implements ISolver {
         return (
             locos.find(
                 (l) =>
-                    !usedIds.has(l.id) &&
                     l.status === 'AVAILABLE' &&
                     l.locationStationId === stationId &&
-                    new Date(l.availableFrom) <= requiredBy,
+                    this.getResourceAvailableFrom(availability, l.id, l.availableFrom) <= requiredBy,
             ) ?? null
         );
     }
 
     private findAvailableCrew(
-        crews: { id: string; status: string; availableFrom: Date; requiredNoticeMinutes: number }[],
-        usedIds: Set<string>,
+        crews: Array<Pick<Crew, 'id' | 'status' | 'availableFrom' | 'requiredNoticeMinutes'>>,
+        availability: Map<string, Date>,
         dep: Date,
     ) {
         return (
             crews.find((c) => {
-                if (usedIds.has(c.id)) return false;
                 if (c.status !== 'AVAILABLE') return false;
                 const requiredBy = new Date(
                     dep.getTime() - (c.requiredNoticeMinutes ?? 120) * 60_000,
                 );
-                return new Date(c.availableFrom) <= requiredBy;
+                return this.getResourceAvailableFrom(availability, c.id, c.availableFrom) <= requiredBy;
             }) ?? null
         );
+    }
+
+    private buildResourceAvailabilityMap<
+        T extends { id: string; availableFrom: Date },
+        K extends 'assignedLocomotiveId' | 'assignedCrewId',
+    >(
+        resources: T[],
+        baseAllocations: Array<Pick<Allocation, K | 'plannedArrival'>>,
+        field: K,
+    ) {
+        const availability = new Map<string, Date>();
+
+        for (const resource of resources) {
+            availability.set(resource.id, new Date(resource.availableFrom));
+        }
+
+        for (const allocation of baseAllocations) {
+            const resourceId = allocation[field];
+            if (!resourceId) continue;
+            const current = availability.get(resourceId);
+            const arrival = new Date(allocation.plannedArrival);
+            if (!current || arrival > current) {
+                availability.set(resourceId, arrival);
+            }
+        }
+
+        return availability;
+    }
+
+    private registerBaseTrackOccupancy(
+        occupancy: Map<string, Array<[Date, Date]>>,
+        baseAllocations: Array<Pick<Allocation, 'assignedTrackId' | 'plannedDeparture'>>,
+    ) {
+        for (const allocation of baseAllocations) {
+            if (!allocation.assignedTrackId) continue;
+            const occStart = new Date(
+                new Date(allocation.plannedDeparture).getTime() - TRACK_OCCUPANCY_BEFORE * 60_000,
+            );
+            const occEnd = new Date(
+                new Date(allocation.plannedDeparture).getTime() + TRACK_OCCUPANCY_AFTER * 60_000,
+            );
+            const windows = occupancy.get(allocation.assignedTrackId) ?? [];
+            windows.push([occStart, occEnd]);
+            occupancy.set(allocation.assignedTrackId, windows);
+        }
+    }
+
+    private getResourceAvailableFrom(
+        availability: Map<string, Date>,
+        resourceId: string,
+        fallback: Date,
+    ) {
+        return availability.get(resourceId) ?? new Date(fallback);
     }
 
     private overlaps(s1: Date, e1: Date, s2: Date | string, e2: Date | string): boolean {

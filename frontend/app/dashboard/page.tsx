@@ -164,8 +164,10 @@ export default function DashboardPage() {
 
     const resolveStationId = useCallback(async () => {
         const fromStorage = window.localStorage.getItem('ktz_station_id') ?? '';
-        if (fromStorage) return fromStorage;
         const stations = await getStations();
+        if (fromStorage && stations.stations.some(s => s.id === fromStorage)) {
+            return fromStorage;
+        }
         return pickBestStationId(stations.stations);
     }, []);
 
@@ -184,14 +186,21 @@ export default function DashboardPage() {
         let mounted = true;
         (async () => {
             let sid = new URLSearchParams(window.location.search).get('stationId') ?? '';
-            if (!sid) {
-                try {
+            try {
+                const stationsReq = await getStations();
+                const isValidSid = sid && stationsReq.stations.some(s => s.id === sid);
+                if (!isValidSid) {
                     sid = await resolveStationId();
-                } catch { }
-                if (sid) {
-                    window.history.replaceState({}, '', `/dashboard?stationId=${sid}`);
+                    if (sid) {
+                        window.history.replaceState({}, '', `/dashboard?stationId=${sid}`);
+                    }
+                }
+            } catch (e) {
+                if (!sid) {
+                    try { sid = await resolveStationId(); } catch { }
                 }
             }
+
             if (!mounted) return;
             setStationId(sid);
             if (sid) {
@@ -377,9 +386,18 @@ export default function DashboardPage() {
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                         <StatCard icon={Train} iconBg="bg-sky-50 text-sky-600" count={analytics?.totalTrains ?? '—'} label="поездов" sub="Окно планирования" onMore={() => router.push(`/node?stationId=${stationId}`)} />
-                        <StatCard icon={Timer} iconBg="bg-amber-50 text-amber-600" count={`${analytics?.avgDelayMinutes ?? 0} мин`} label="средняя задержка" sub="Текущая версия" onMore={() => router.push(`/node?stationId=${stationId}&filter=DELAYED`)} />
                         <StatCard icon={AlertTriangle} iconBg="bg-red-50 text-red-500" count={totalConflicts} label="конфликтов" sub="Не решено" onMore={() => router.push(`/node?stationId=${stationId}&filter=CONFLICTS`)} />
-                        <StatCard icon={FileText} iconBg="bg-violet-50 text-violet-600" count={(versions as any)?.total ?? '—'} label="версий" sub="История расписаний" onMore={() => router.push(`/versions?stationId=${stationId}`)} />
+                        
+                        {/* New Idle Time Metrics */}
+                        <StatCard 
+                            icon={Timer} 
+                            iconBg={((analytics?.avgIdleTimeMinutes ?? 0) > 120) ? "bg-purple-100 text-purple-700" : "bg-purple-50 text-purple-600"} 
+                            count={`${Math.floor((analytics?.avgIdleTimeMinutes ?? 0) / 60)}ч ${Math.floor((analytics?.avgIdleTimeMinutes ?? 0) % 60)}м`} 
+                            label="простой" 
+                            sub={`В среднем по ${analytics?.totalIdleLocos ?? 0} локомотивам`} 
+                            onMore={() => router.push(`/gis?stationId=${stationId}`)} 
+                        />
+                        
                         <StatCard icon={Gauge} iconBg="bg-green-50 text-green-600" count={`${analytics?.trackOccupancyRate ?? 0}%`} label="пути" sub="Занятость" onMore={() => router.push(`/node?stationId=${stationId}`)} />
                         <StatCard icon={Cog} iconBg="bg-indigo-50 text-indigo-600" count={`${analytics?.locomotiveUtilization ?? 0}%`} label="локомотивы" sub="Использование" onMore={() => router.push(`/node?stationId=${stationId}`)} />
                         <StatCard icon={Users} iconBg="bg-orange-50 text-orange-600" count={`${analytics?.crewUtilization ?? 0}%`} label="бригады" sub="Использование" onMore={() => router.push(`/node?stationId=${stationId}`)} />

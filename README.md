@@ -13,6 +13,18 @@
 
 ## Запуск локально (без Docker)
 
+Быстрый путь из корня:
+
+```bash
+make install
+make db-generate
+make db-push
+make backend-dev
+make frontend-dev
+```
+
+Подробный сценарий: `docs/LOCAL_SETUP.md`
+
 ### 1) Проверь `.env`
 
 `backend/.env` пример:
@@ -92,7 +104,15 @@ curl -X POST http://localhost:3001/admin/seed \
 - Симуляция: `http://localhost:3000/simulation`
 - Версии: `http://localhost:3000/versions`
 
+## Документация
+
+- Пилотный scope: `docs/SCOPE_PILOT.md`
+- Канонический формат данных: `docs/CANONICAL_DATA_FORMAT.md`
+- Сопоставление текущего кода с BPMN-процессом подвязок: `docs/BPMN_ALIGNMENT.md`
+
 ## Полезные API
+
+### Пилот (перепланирование узла)
 
 - `GET /node/stations`
 - `GET /node/overview?stationId=...&hours=6|12|24`
@@ -103,6 +123,24 @@ curl -X POST http://localhost:3001/admin/seed \
 - `GET /analytics/node-overview?stationId=...`
 - `GET /analytics/assistant?stationId=...`
 - `GET /analytics/notifications?stationId=...`
+
+### Подвязки (BPMN-контур)
+
+- `POST /api/v1/files` — загрузка XLSX (multipart/form-data)
+- `GET /api/v1/batches/:fileId` — статус обработки файла
+- `GET /api/v1/validation/:fileId/errors` — ошибки валидации по строкам
+- `POST /api/v1/bindings` — UPSERT подвязок
+- `GET /api/v1/bindings` — список подвязок (фильтры: periodId, stationId, status)
+- `GET /api/v1/bindings/:id` — деталь с конфликтами/аллокациями
+- `PUT /api/v1/bindings/:id/status` — перевод статуса
+- `POST /api/v1/conflicts/check` — запуск проверки конфликтов
+- `GET /api/v1/conflicts` — список конфликтов
+- `POST /api/v1/kpi/calculate` — расчёт KPI
+- `GET /api/v1/kpi?periodId=...` — KPI витрина
+- `GET /api/v1/kpi/conflicts-summary?periodId=...` — сводка конфликтов
+- `GET|POST /api/v1/reference/locomotive-models` — модели локомотивов
+- `GET|POST /api/v1/reference/shoulders` — плечи обслуживания
+- `GET|POST /api/v1/reference/maintenance-rules` — правила ТО
 
 ## Тесты
 

@@ -187,4 +187,39 @@ describe('GreedySolver', () => {
         const headwayMs = secondAlloc.plannedDeparture.getTime() - firstAlloc.plannedDeparture.getTime();
         expect(headwayMs).toBeGreaterThanOrEqual(5 * 60_000);
     });
+
+    it('should reuse the same locomotive and crew after previous assignment ends', async () => {
+        const now = new Date();
+        const firstDep = addHours(now, 3);
+        const firstArr = addHours(firstDep, 1);
+        const secondDep = addMinutes(firstArr, 180);
+        const secondArr = addHours(secondDep, 1);
+
+        const input: SolverInput = {
+            stationId: 'station-1',
+            planningFrom: now,
+            planningTo: addHours(now, 12),
+            trainRuns: [
+                mockTrainRun('run-1', '801', 'PASSENGER', firstDep, firstArr),
+                mockTrainRun('run-2', '802', 'FREIGHT', secondDep, secondArr),
+            ],
+            tracks: [mockTrack('track-1', 'Track 1')],
+            locomotives: [mockLoco('loco-1', 'station-1', subHours(firstDep, 3))],
+            crews: [mockCrew('crew-1', subHours(firstDep, 4))],
+            baseAllocations: [],
+        };
+
+        const output = await solver.solve(input);
+        expect(output.allocations).toHaveLength(2);
+
+        const first = output.allocations.find((a) => a.trainRunId === 'run-1');
+        const second = output.allocations.find((a) => a.trainRunId === 'run-2');
+
+        expect(first?.assignedLocomotiveId).toBe('loco-1');
+        expect(first?.assignedCrewId).toBe('crew-1');
+        expect(second?.assignedLocomotiveId).toBe('loco-1');
+        expect(second?.assignedCrewId).toBe('crew-1');
+        expect(second?.conflictFlags.locomotive).toBe(false);
+        expect(second?.conflictFlags.crew).toBe(false);
+    });
 });
