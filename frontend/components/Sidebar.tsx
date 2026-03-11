@@ -11,6 +11,8 @@ import {
     HelpCircle,
     LogOut,
     Train,
+    Link2,
+    Globe,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -19,6 +21,8 @@ const sidebarItems = [
     { href: '/resources', icon: Database, label: 'Ресурсы', id: 'resources' },
     { href: '/simulation', icon: Zap, label: 'Симуляция', id: 'simulation' },
     { href: '/versions', icon: ClipboardList, label: 'Версии', id: 'versions' },
+    { href: '/bindings', icon: Link2, label: 'Подвязки', id: 'bindings' },
+    { href: '/gis', icon: Globe, label: 'R-Атлас (GIS)', id: 'gis' },
 ];
 
 export default function Sidebar({ stationId }: { stationId: string }) {

@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
-import { getNodeOverview, getStations, pickBestStationId } from '../../lib/api';
+import { getCrewCalls, getNodeDecisionQueue, getNodeOverview, getNodeResources, getStations, pickBestStationId } from '../../lib/api';
 import Link from 'next/link';
+import LocomotiveGanttChart from '../../components/LocomotiveGanttChart';
+import DispatcherDecisionQueue from '../../components/DispatcherDecisionQueue';
+import CrewCallBoard from '../../components/CrewCallBoard';
 import {
     Train, AlertTriangle, Clock, Zap, RefreshCw, Filter, Search,
     Flag, CheckCircle2,
@@ -53,9 +56,20 @@ function conflictLabel(key: string) {
     return labels[key] ?? key;
 }
 
+function operationScenarioMeta(scenario?: string) {
+    const map: Record<string, { label: string; cls: string }> = {
+        FORMATION: { label: 'Формирование', cls: 'badge-blue' },
+        TRANSIT: { label: 'Транзит', cls: 'badge-gray' },
+    };
+    return map[scenario ?? ''] ?? { label: scenario ?? '—', cls: 'badge-gray' };
+}
+
 export default function NodePage() {
     const [stationId, setStationId] = useState('');
     const [data, setData] = useState<any>(null);
+    const [resources, setResources] = useState<any>(null);
+    const [decisionQueue, setDecisionQueue] = useState<any>(null);
+    const [crewCalls, setCrewCalls] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [filter, setFilter] = useState<'ALL' | 'CONFLICTS' | 'DELAYED'>('ALL');
@@ -64,7 +78,18 @@ export default function NodePage() {
 
     const load = useCallback(async (sid: string, h = 6) => {
         setLoading(true);
-        try { setData(await getNodeOverview(sid, undefined, undefined, h)); } catch { }
+        try {
+            const [overviewResponse, resourcesResponse, decisionQueueResponse, crewCallsResponse] = await Promise.all([
+                getNodeOverview(sid, undefined, undefined, h),
+                getNodeResources(sid),
+                getNodeDecisionQueue(sid, h),
+                getCrewCalls(sid, h),
+            ]);
+            setData(overviewResponse);
+            setResources(resourcesResponse);
+            setDecisionQueue(decisionQueueResponse);
+            setCrewCalls(crewCallsResponse);
+        } catch { }
         finally { setLoading(false); }
     }, []);
 
@@ -122,6 +147,7 @@ export default function NodePage() {
 
     const conflictCount = trainRuns.filter(t => Object.values(t.conflictFlags ?? {}).some(Boolean)).length;
     const delayedCount = trainRuns.filter(t => new Date(t.plannedDeparture).getTime() - new Date(t.trainRun.scheduledDeparture).getTime() > 0).length;
+    const formationCount = trainRuns.filter(t => t.trainRun.operationScenario === 'FORMATION').length;
 
     return (
         <div className="flex min-h-screen">
@@ -147,10 +173,35 @@ export default function NodePage() {
                         {group !== 'ALL' && <span className="badge-blue mt-2 inline-flex">Группа: {group}</span>}
                     </div>
 
+                    {/* Gantt Chart Area */}
+                    {!loading && resources?.locomotives && (
+                        <div className="mb-8">
+                            <LocomotiveGanttChart 
+                                stationId={stationId}
+                                locomotives={resources.locomotives}
+                                trainRuns={filtered} // The planned allocations
+                                windowHours={hours}
+                                startDate={new Date()} // In reality, from the current visual window
+                                onOptimizeClick={(locoId) => {
+                                    if(confirm('Запустить оптимизатор LAP для устранения простоя?')) {
+                                        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/optimizer/station/${stationId}/solve-lap`, { method: 'POST' })
+                                            .then(res => res.json())
+                                            .then(data => {
+                                                alert(data.message || 'Оптимизация завершена');
+                                                load(stationId, hours);
+                                            })
+                                            .catch(err => alert('Ошибка при оптимизации'));
+                                    }
+                                }}
+                            />
+                        </div>
+                    )}
+
                     {/* Summary */}
-                    <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="grid grid-cols-4 gap-4 mb-6">
                         {[
                             { label: 'Всего поездов', value: trainRuns.length, color: 'text-gray-900', bg: 'bg-white', Icon: Train },
+                            { label: 'Формирование', value: formationCount, color: 'text-sky-700', bg: 'bg-sky-50', Icon: Zap },
                             { label: 'С конфликтами', value: conflictCount, color: 'text-red-600', bg: 'bg-red-50', Icon: AlertTriangle },
                             { label: 'С задержкой', value: delayedCount, color: 'text-amber-600', bg: 'bg-amber-50', Icon: Clock },
                         ].map(s => (
@@ -163,6 +214,9 @@ export default function NodePage() {
                             </div>
                         ))}
                     </div>
+
+                    <DispatcherDecisionQueue items={decisionQueue?.items ?? []} />
+                    <CrewCallBoard items={crewCalls?.items ?? []} onUpdated={() => stationId ? load(stationId, hours) : undefined} />
 
                     {/* Filters */}
                     <div className="card mb-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
@@ -212,20 +266,32 @@ export default function NodePage() {
                         <div className="table-wrapper">
                             <table className="table">
                                 <thead><tr>
-                                    <th>№ поезда</th><th>Приоритет</th><th>Статус</th>
+                                    <th>№ поезда</th><th>Сценарий</th><th>Приоритет</th><th>Статус</th>
                                     <th>По графику</th><th>План</th><th>Задержка</th>
                                     <th>Путь</th><th>Локомотив</th><th>Бригада</th><th>Конфликты</th>
                                 </tr></thead>
                                 <tbody>
                                     {filtered.length === 0 ? (
-                                        <tr><td colSpan={10} className="text-center text-gray-400 py-12">Поезда не найдены</td></tr>
+                                        <tr><td colSpan={11} className="text-center text-gray-400 py-12">Поезда не найдены</td></tr>
                                     ) : filtered.map((t: any) => {
                                         const delayMs = new Date(t.plannedDeparture).getTime() - new Date(t.trainRun.scheduledDeparture).getTime();
                                         const delayMin = Math.round(delayMs / 60_000);
                                         const flags = Object.entries(t.conflictFlags ?? {}).filter(([, v]) => v);
+                                        const scenario = operationScenarioMeta(t.trainRun.operationScenario);
                                         return (
                                             <tr key={t.allocationId}>
                                                 <td><span className="font-mono font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-lg text-sm">#{t.trainRun.number}</span></td>
+                                                <td>
+                                                    <div className="flex flex-col gap-1">
+                                                        <span className={scenario.cls}>{scenario.label}</span>
+                                                        {(t.trainRun.requiresCrewChange || t.trainRun.requiresLocoChange) && (
+                                                            <span className="text-[10px] text-gray-400">
+                                                                {t.trainRun.requiresCrewChange ? 'смена бригады' : 'без смены бригады'}
+                                                                {t.trainRun.requiresLocoChange ? ' · смена тяги' : ''}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
                                                 <td><span className={P_MAP[t.trainRun.priority]?.cls ?? 'badge-gray'}><Flag size={10} className="inline -mt-0.5 mr-0.5" />{P_MAP[t.trainRun.priority]?.label ?? t.trainRun.priority}</span></td>
                                                 <td><span className={`badge ${statusBadge(t.trainRun.status)}`}>{statusLabel(t.trainRun.status)}</span></td>
                                                 <td className="text-gray-400 text-xs tabular-nums">{new Date(t.trainRun.scheduledDeparture).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</td>

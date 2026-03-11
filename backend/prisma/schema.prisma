@@ -66,6 +66,13 @@ enum TrainRunStatus {
   @@schema("ktz")
 }
 
+enum OperationScenario {
+  FORMATION
+  TRANSIT
+
+  @@schema("ktz")
+}
+
 enum DepartureSlotStatus {
   IMMEDIATE
   ASSIGNED
@@ -108,6 +115,16 @@ enum OperationalEventType {
   @@schema("ktz")
 }
 
+enum CrewCallStatus {
+  PLANNED
+  NOTIFIED
+  CONFIRMED
+  MISSED
+  CANCELLED
+
+  @@schema("ktz")
+}
+
 // ─────────────────────────────────────────────
 // MODELS
 // ─────────────────────────────────────────────
@@ -116,6 +133,8 @@ model Station {
   id        String   @id @default(uuid())
   name      String
   code      String?  @unique
+  latitude  Float?
+  longitude Float?
   createdAt DateTime @default(now())
 
   tracks           Track[]
@@ -124,6 +143,10 @@ model Station {
   trainRunsDest    TrainRun[]    @relation("DestStation")
   scheduleVersions ScheduleVersion[]
   events           OperationalEvent[]
+  shouldersFrom    ServiceShoulder[] @relation("ShoulderFrom")
+  shouldersTo      ServiceShoulder[] @relation("ShoulderTo")
+  routeStops       RouteStop[]
+  bindingsTurnaround BindingPlan[] @relation("BindingTurnaround")
 
   @@schema("ktz")
 }
@@ -149,6 +172,7 @@ model Depot {
 
   locomotives Locomotive[]
   crews       Crew[]
+  shoulders   ServiceShoulder[]
 
   @@schema("ktz")
 }
@@ -167,6 +191,7 @@ model Locomotive {
   depot           Depot    @relation(fields: [depotId], references: [id])
   locationStation Station? @relation("StationLocomotives", fields: [locationStationId], references: [id])
   allocations     Allocation[]
+  bindingAllocations BindingAllocation[]
 
   @@index([status, availableFrom])
   @@schema("ktz")
@@ -181,6 +206,7 @@ model Crew {
 
   depot       Depot        @relation(fields: [depotId], references: [id])
   allocations Allocation[]
+  crewCalls   CrewCall[]
 
   @@index([status, availableFrom])
   @@schema("ktz")
@@ -197,6 +223,9 @@ model Train {
 
   trainRuns TrainRun[]
   schedules Schedule[]
+  routes    Route[]
+  bindingsArrival   BindingPlan[] @relation("BindingArrival")
+  bindingsDeparture BindingPlan[] @relation("BindingDeparture")
 
   @@schema("ktz")
 }
@@ -210,11 +239,15 @@ model TrainRun {
   scheduledArrival     DateTime
   currentDelayMinutes  Int            @default(0)
   status               TrainRunStatus @default(PLANNED)
+  operationScenario    OperationScenario @default(TRANSIT)
+  requiresCrewChange   Boolean        @default(true)
+  requiresLocoChange   Boolean        @default(false)
 
   train               Train      @relation(fields: [trainId], references: [id])
   originStation       Station    @relation("OriginStation", fields: [originStationId], references: [id])
   destinationStation  Station    @relation("DestStation", fields: [destinationStationId], references: [id])
   allocations         Allocation[]
+  crewCalls           CrewCall[]
 
   @@index([scheduledDeparture])
   @@schema("ktz")
@@ -236,6 +269,7 @@ model ScheduleVersion {
   baseVersion ScheduleVersion?  @relation("VersionHistory", fields: [baseVersionId], references: [id])
   childVersions ScheduleVersion[] @relation("VersionHistory")
   allocations Allocation[]
+  crewCalls   CrewCall[]
 
   @@schema("ktz")
 }
@@ -273,6 +307,28 @@ model OperationalEvent {
 
   station Station @relation(fields: [stationId], references: [id])
 
+  @@schema("ktz")
+}
+
+model CrewCall {
+  id                     String         @id @default(uuid())
+  trainRunId             String
+  crewId                 String?
+  generatedFromVersionId String?
+  mustReportAt           DateTime
+  acceptedLocomotiveAt   DateTime
+  status                 CrewCallStatus @default(PLANNED)
+  notes                  String         @default("")
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  trainRun              TrainRun         @relation(fields: [trainRunId], references: [id])
+  crew                  Crew?            @relation(fields: [crewId], references: [id])
+  generatedFromVersion  ScheduleVersion? @relation(fields: [generatedFromVersionId], references: [id])
+
+  @@unique([trainRunId, generatedFromVersionId])
+  @@index([status, mustReportAt])
+  @@index([crewId, mustReportAt])
   @@schema("ktz")
 }
 
@@ -334,5 +390,256 @@ model AuditLog {
   payload     Json     @default("{}")
   createdAt   DateTime @default(now())
 
+  @@schema("ktz")
+}
+
+// ─────────────────────────────────────────────
+// BINDING DOMAIN: ENUMS
+// ─────────────────────────────────────────────
+
+enum BindingPlanStatus {
+  DRAFT
+  VALIDATED
+  PLANNED
+  CONFLICT
+  REJECTED
+  APPROVED
+
+  @@schema("ktz")
+}
+
+enum InputFileStatus {
+  UPLOADED
+  VALIDATING
+  VALIDATED
+  FAILED
+  PROCESSED
+
+  @@schema("ktz")
+}
+
+enum ConflictCode {
+  FORMAT_ERROR
+  VALIDATION_ERROR
+  REF_NOT_FOUND
+  SHOULDER_NOT_RESOLVED
+  MODEL_NOT_ALLOWED
+  TIME_CONFLICT
+  MAINTENANCE_VIOLATION
+  SYSTEM_ERROR
+
+  @@schema("ktz")
+}
+
+enum TractionType {
+  ELECTRIC
+  DIESEL
+  DUAL
+
+  @@schema("ktz")
+}
+
+enum MovementType {
+  PASSENGER
+  FREIGHT
+  MIXED
+  LIGHT
+
+  @@schema("ktz")
+}
+
+// ─────────────────────────────────────────────
+// BINDING DOMAIN: MDM/REFERENCE MODELS
+// ─────────────────────────────────────────────
+
+model InputFile {
+  id         String          @id @default(uuid())
+  fileName   String
+  fileType   String          // e.g. "BindingPlan", "Locomotives", "ServiceShoulders"
+  periodId   String?         // e.g. "2026-03" or "2025-2026"
+  checksum   String          @unique
+  status     InputFileStatus @default(UPLOADED)
+  uploadedBy String?
+  errorCount Int             @default(0)
+  errorDetails Json          @default("[]") // row-level errors
+  uploadedAt DateTime        @default(now())
+  processedAt DateTime?
+
+  bindingPlans BindingPlan[]
+
+  @@index([status])
+  @@index([periodId])
+  @@schema("ktz")
+}
+
+model LocomotiveModel {
+  id            String       @id @default(uuid())
+  series        String       @unique
+  sectionsCount Int          @default(1)
+  tractionType  TractionType @default(DIESEL)
+  description   String?
+  createdAt     DateTime     @default(now())
+
+  shoulders        ServiceShoulder[]
+  maintenanceRules MaintenanceRule[]
+  bindingPlans     BindingPlan[]
+
+  @@schema("ktz")
+}
+
+model ServiceShoulder {
+  id              String       @id @default(uuid())
+  depotId         String
+  fromStationId   String
+  toStationId     String
+  modelId         String
+  sectionsCount   Int          @default(1)
+  movementType    MovementType @default(MIXED)
+  createdAt       DateTime     @default(now())
+
+  depot       Depot           @relation(fields: [depotId], references: [id])
+  fromStation Station         @relation("ShoulderFrom", fields: [fromStationId], references: [id])
+  toStation   Station         @relation("ShoulderTo", fields: [toStationId], references: [id])
+  model       LocomotiveModel @relation(fields: [modelId], references: [id])
+
+  bindingPlans BindingPlan[]
+
+  @@unique([depotId, fromStationId, toStationId, modelId, sectionsCount])
+  @@index([fromStationId, toStationId])
+  @@schema("ktz")
+}
+
+model MaintenanceRule {
+  id                   String @id @default(uuid())
+  modelId              String
+  to2KmMin             Int?
+  to2KmMax             Int?
+  to2DowntimeHours     Int?
+  serviceKmMin         Int?
+  serviceKmMax         Int?
+  serviceDowntimeHours Int?
+  createdAt            DateTime @default(now())
+
+  model LocomotiveModel @relation(fields: [modelId], references: [id])
+
+  @@index([modelId])
+  @@schema("ktz")
+}
+
+model Route {
+  id        String   @id @default(uuid())
+  trainId   String
+  validFrom DateTime
+  validTo   DateTime
+  createdAt DateTime @default(now())
+
+  train Train      @relation(fields: [trainId], references: [id])
+  stops RouteStop[]
+
+  @@index([trainId])
+  @@schema("ktz")
+}
+
+model RouteStop {
+  id           String    @id @default(uuid())
+  routeId      String
+  stationId    String
+  seqNo        Int
+  stationCode  String?
+  arrivalDt    DateTime?
+  departureDt  DateTime?
+  stopMinutes  Int?
+  distanceKm   Int?
+
+  route   Route   @relation(fields: [routeId], references: [id])
+  station Station @relation(fields: [stationId], references: [id])
+
+  @@index([routeId, seqNo])
+  @@schema("ktz")
+}
+
+// ─────────────────────────────────────────────
+// BINDING DOMAIN: PLANNING MODELS
+// ─────────────────────────────────────────────
+
+model BindingPlan {
+  id                   String            @id @default(uuid())
+  periodId             String
+  turnaroundStationId  String
+  arrivalTrainId       String
+  arrivalDt            DateTime
+  departureTrainId     String
+  departureDt          DateTime
+  dwellMinutes         Int               @default(0)
+  shoulderId           String?
+  requiredModelId      String?
+  status               BindingPlanStatus @default(DRAFT)
+  conflictReasonCode   String?
+  conflictReasonDetails String?
+  sourceFileId         String?
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  turnaroundStation Station          @relation("BindingTurnaround", fields: [turnaroundStationId], references: [id])
+  arrivalTrain      Train            @relation("BindingArrival", fields: [arrivalTrainId], references: [id])
+  departureTrain    Train            @relation("BindingDeparture", fields: [departureTrainId], references: [id])
+  shoulder          ServiceShoulder? @relation(fields: [shoulderId], references: [id])
+  requiredModel     LocomotiveModel? @relation(fields: [requiredModelId], references: [id])
+  sourceFile        InputFile?       @relation(fields: [sourceFileId], references: [id])
+
+  allocations BindingAllocation[]
+  conflicts   BindingConflict[]
+
+  @@unique([periodId, turnaroundStationId, arrivalTrainId, departureTrainId, arrivalDt])
+  @@index([periodId])
+  @@index([status])
+  @@index([turnaroundStationId])
+  @@schema("ktz")
+}
+
+model BindingAllocation {
+  id             String   @id @default(uuid())
+  bindingId      String
+  locomotiveId   String
+  allocatedFrom  DateTime
+  allocatedTo    DateTime
+  status         String   @default("ACTIVE") // ACTIVE, RELEASED, CANCELLED
+  createdAt      DateTime @default(now())
+
+  binding    BindingPlan @relation(fields: [bindingId], references: [id])
+  locomotive Locomotive  @relation(fields: [locomotiveId], references: [id])
+
+  @@index([bindingId])
+  @@index([locomotiveId, allocatedFrom, allocatedTo])
+  @@schema("ktz")
+}
+
+model BindingConflict {
+  id         String       @id @default(uuid())
+  bindingId  String
+  code       ConflictCode
+  details    String?
+  detectedAt DateTime     @default(now())
+
+  binding BindingPlan @relation(fields: [bindingId], references: [id])
+
+  @@index([bindingId])
+  @@index([code])
+  @@schema("ktz")
+}
+
+model KpiSnapshot {
+  id           String   @id @default(uuid())
+  periodId     String
+  scopeType    String   // "station", "depot", "shoulder", "global"
+  scopeId      String?  // station_id, depot_id, etc.
+  idleRatio    Float    @default(0)
+  utilization  Float    @default(0)
+  conflictsCnt Int      @default(0)
+  avgDwell     Float    @default(0)
+  maxDwell     Float    @default(0)
+  calculatedAt DateTime @default(now())
+
+  @@index([periodId, scopeType])
   @@schema("ktz")
 }

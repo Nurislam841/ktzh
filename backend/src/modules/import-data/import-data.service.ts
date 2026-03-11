@@ -523,6 +523,9 @@ export class ImportDataService {
                     scheduledArrival: arrival,
                     currentDelayMinutes: 0,
                     status: 'PLANNED',
+                    operationScenario: idx % 5 === 0 ? 'FORMATION' : 'TRANSIT',
+                    requiresCrewChange: true,
+                    requiresLocoChange: idx % 5 === 0,
                 },
             });
             created++;
