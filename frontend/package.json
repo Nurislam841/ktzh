@@ -2,7 +2,13 @@
     "name": "ktz-frontend",
     "version": "1.0.0",
     "private": true,
+    "engines": {
+        "node": ">=20 <24"
+    },
     "scripts": {
+        "predev": "node ../scripts/check-node-version.mjs",
+        "prebuild": "node ../scripts/check-node-version.mjs",
+        "prestart": "node ../scripts/check-node-version.mjs",
         "dev": "next dev",
         "build": "next build",
         "start": "next start",

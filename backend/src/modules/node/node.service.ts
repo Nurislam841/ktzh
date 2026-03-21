@@ -53,6 +53,8 @@ export class NodeService {
             return { stationId, versionId: null, trainRuns: [], tracks: [] };
         }
 
+    // ──────────────────────────────────────────────────────────────
+    // INTERNAL ALGORITHMS
         const [allocations, trainRuns, tracks] = await Promise.all([
             this.prisma.allocation.findMany({
                 where: {
@@ -266,6 +268,63 @@ export class NodeService {
         };
     }
 
+    async getGlobalLocomotives() {
+        const [locos, models] = await Promise.all([
+            this.prisma.locomotive.findMany({
+                include: {
+                    depot: { select: { name: true } },
+                    locationStation: { select: { name: true } },
+                },
+                orderBy: [{ series: 'asc' }, { number: 'asc' }],
+            }),
+            this.prisma.locomotiveModel.findMany({
+                select: {
+                    series: true,
+                    maintenanceRules: {
+                        orderBy: { createdAt: 'desc' },
+                        take: 1,
+                        select: {
+                            to2KmMin: true,
+                            to2KmMax: true,
+                            to2DowntimeHours: true,
+                            serviceKmMin: true,
+                            serviceKmMax: true,
+                            serviceDowntimeHours: true,
+                        },
+                    },
+                },
+            }),
+        ]);
+
+        const maintenanceBySeries = new Map(
+            models.map((model) => [model.series.trim().toUpperCase(), model.maintenanceRules[0] ?? null]),
+        );
+
+        const formatRange = (min?: number | null, max?: number | null) => {
+            if (min == null && max == null) return null;
+            if (min != null && max != null) return `${min}-${max}`;
+            return String(min ?? max);
+        };
+
+        return locos.map((l) => {
+            const rule = maintenanceBySeries.get(l.series.trim().toUpperCase());
+
+            return {
+                id: l.id,
+                series: l.series,
+                number: l.number,
+                status: l.status,
+                depot: l.depot?.name || '-',
+                station: l.locationStation?.name || '-',
+                availableFrom: l.availableFrom.toISOString(),
+                to2MileageRange: formatRange(rule?.to2KmMin, rule?.to2KmMax),
+                to2DowntimeHours: rule?.to2DowntimeHours ?? null,
+                serviceMileageRange: formatRange(rule?.serviceKmMin, rule?.serviceKmMax),
+                serviceDowntimeHours: rule?.serviceDowntimeHours ?? null,
+            };
+        });
+    }
+
     private buildDecisionItem(allocation: any, now: Date) {
         const plannedDeparture = allocation.plannedDeparture as Date;
         const scheduledDeparture = allocation.trainRun.scheduledDeparture as Date;
@@ -428,5 +487,12 @@ export class NodeService {
         if (!maintenanceTo) return pointInTime.getTime() >= maintenanceFrom.getTime();
         return pointInTime.getTime() >= maintenanceFrom.getTime()
             && pointInTime.getTime() <= maintenanceTo.getTime();
+    }
+
+    async getTrains() {
+        return this.prisma.train.findMany({
+            orderBy: { number: 'asc' },
+            select: { id: true, number: true }
+        });
     }
 }

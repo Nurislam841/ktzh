@@ -2,7 +2,14 @@
   "name": "ktz-backend",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=20 <24"
+  },
   "scripts": {
+    "prebuild": "node ../scripts/check-node-version.mjs",
+    "prestart": "node ../scripts/check-node-version.mjs",
+    "prestart:dev": "node ../scripts/check-node-version.mjs",
+    "prestart:prod": "node ../scripts/check-node-version.mjs",
     "build": "nest build",
     "start": "node dist/main",
     "start:dev": "nest start --watch",

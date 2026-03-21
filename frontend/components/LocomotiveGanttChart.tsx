@@ -7,10 +7,9 @@ interface GanttProps {
     trainRuns: any[]; // These are allocated/planned train runs
     windowHours: number;
     startDate: Date;
-    onOptimizeClick?: (locoId: string) => void;
 }
 
-export default function LocomotiveGanttChart({ stationId, locomotives, trainRuns, windowHours, startDate, onOptimizeClick }: GanttProps) {
+export default function LocomotiveGanttChart({ stationId, locomotives, trainRuns, windowHours, startDate }: GanttProps) {
     const endDate = new Date(startDate.getTime() + windowHours * 60 * 60000);
     const totalDurationMs = endDate.getTime() - startDate.getTime();
 
@@ -161,14 +160,13 @@ export default function LocomotiveGanttChart({ stationId, locomotives, trainRuns
                                         return (
                                             <div 
                                                 key={`idle-${i}`} 
-                                                className={`absolute top-2 bottom-2 rounded-md ${isCritical ? 'bg-gradient-to-r from-red-500 to-rose-600 shadow-sm shadow-red-200 cursor-pointer hover:shadow-md hover:scale-[1.01] z-20 transition-all group/idle' : 'bg-orange-100 border border-orange-200 opacity-60'}`}
+                                                className={`absolute top-2 bottom-2 rounded-md ${isCritical ? 'bg-gradient-to-r from-red-500 to-rose-600 shadow-sm shadow-red-200 z-20 group/idle' : 'bg-orange-100 border border-orange-200 opacity-60'}`}
                                                 style={{ left: `${idle.left}%`, width: `${idle.width}%`, minWidth: '4px' }}
-                                                onClick={() => isCritical && onOptimizeClick?.(loco.id)}
                                             >
                                                 {isCritical && (
                                                     <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
                                                         <span className="text-[10px] font-bold text-white whitespace-nowrap opacity-0 group-hover/idle:opacity-100 transition-opacity">
-                                                            Простой: {label} (LAP →)
+                                                            Простой: {label}
                                                         </span>
                                                     </div>
                                                 )}

@@ -100,6 +100,10 @@ export async function getStations() {
     return fetchApi<{ stations: Array<{ id: string; name: string; code?: string | null; versions: number; trainRuns: number; locomotives: number; tracks: number; active: boolean }> }>('/node/stations');
 }
 
+export function getTrains() {
+    return fetchApi<Array<{ id: string; number: string; movementType?: string }>>('/node/trains');
+}
+
 export function pickBestStationId(stations: Array<{ id: string; trainRuns: number; versions: number; locomotives: number; active: boolean }>) {
     if (!stations.length) return '';
     const sorted = [...stations].sort((a, b) => {
@@ -109,6 +113,10 @@ export function pickBestStationId(stations: Array<{ id: string; trainRuns: numbe
     });
     const active = sorted.find((s) => s.active);
     return (active ?? sorted[0]).id;
+}
+
+export async function getGlobalLocomotives() {
+    return fetchApi<any[]>('/node/locomotives');
 }
 
 // ─── Schedule ────────────────────────────────────────────────────────
@@ -231,6 +239,19 @@ export async function getDashboardNotifications(stationId: string) {
     return fetchApi(`/analytics/notifications?${params.toString()}`);
 }
 
+// ─── Optimizer ───────────────────────────────────────────────────────
+export async function solveLap(stationId: string) {
+    return fetchApi(`/optimizer/station/${stationId}/solve-lap`, { method: 'POST' });
+}
+
+export async function approveLap(stationId: string, data: { locomotiveId: string, trainRunId: string, recommendationType: string }) {
+    return fetchApi(`/optimizer/station/${stationId}/approve-lap`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+}
+
+
 // ─── Binding Domain ──────────────────────────────────────────────────
 export async function getBindings(filters?: {
     periodId?: string;
@@ -250,6 +271,21 @@ export async function getBindings(filters?: {
 
 export async function getBindingDetail(bindingId: string) {
     return fetchApi(`/api/v1/bindings/${bindingId}`);
+}
+
+export async function createBinding(data: {
+    periodId: string;
+    turnaroundStationId: string;
+    arrivalTrainId: string;
+    arrivalDt: string;
+    departureTrainId: string;
+    departureDt: string;
+    dwellMinutes?: number;
+}) {
+    return fetchApi('/api/v1/bindings', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
 }
 
 export async function runBindingConflictCheck(periodId: string) {

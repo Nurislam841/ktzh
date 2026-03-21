@@ -1,4 +1,4 @@
-import { Controller, Post, Param } from '@nestjs/common';
+import { Controller, Post, Param, Body } from '@nestjs/common';
 import { OptimizerService } from './optimizer.service';
 
 @Controller('optimizer')
@@ -13,5 +13,10 @@ export class OptimizerController {
             message: `LAP completed. Generated ${assignments.length} assignments.`,
             assignments,
         };
+    }
+
+    @Post('station/:id/approve-lap')
+    async approveLap(@Param('id') stationId: string, @Body() body: { locomotiveId: string, trainRunId: string, recommendationType: string }) {
+        return this.optimizerService.approveAssignment(body);
     }
 }

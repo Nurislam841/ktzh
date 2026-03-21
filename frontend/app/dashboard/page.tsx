@@ -11,9 +11,10 @@ import {
     getStations,
     pickBestStationId,
     seedData,
-    getAssistantInsights,
     getDashboardNotifications,
 } from '../../lib/api';
+
+import LocomotiveFleetWidget from '../../components/LocomotiveFleetWidget';
 import {
     Train, Clock, AlertTriangle, FileText, Gauge, Cog, Users, CalendarDays,
     Search, Bell, LayoutGrid, Timer, ListTodo, CalendarRange,
@@ -140,15 +141,13 @@ function KanbanCard({ run, onOpen }: { run: any; onOpen: () => void }) {
 export default function DashboardPage() {
     const router = useRouter();
     const [stationId, setStationId] = useState('');
+    const [stations, setStations] = useState<any[]>([]);
     const [analytics, setAnalytics] = useState<any>(null);
     const [versions, setVersions] = useState<any>(null);
     const [nodeData, setNodeData] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [seeding, setSeeding] = useState(false);
     const [seedError, setSeedError] = useState('');
-    const [assistantLoading, setAssistantLoading] = useState(false);
-    const [assistantData, setAssistantData] = useState<any>(null);
-    const [assistantError, setAssistantError] = useState('');
     const [notificationsOpen, setNotificationsOpen] = useState(false);
     const [notificationsLoading, setNotificationsLoading] = useState(false);
     const [notificationsData, setNotificationsData] = useState<any>(null);
@@ -188,7 +187,8 @@ export default function DashboardPage() {
             let sid = new URLSearchParams(window.location.search).get('stationId') ?? '';
             try {
                 const stationsReq = await getStations();
-                const isValidSid = sid && stationsReq.stations.some(s => s.id === sid);
+                if (mounted) setStations(stationsReq.stations);
+                const isValidSid = sid && stationsReq.stations.some((s: any) => s.id === sid);
                 if (!isValidSid) {
                     sid = await resolveStationId();
                     if (sid) {
@@ -223,20 +223,6 @@ export default function DashboardPage() {
             }
         } catch (e: any) { setSeedError(e.message); }
         finally { setSeeding(false); }
-    };
-
-    const handleAskAssistant = async () => {
-        if (!stationId) return;
-        setAssistantLoading(true);
-        setAssistantError('');
-        try {
-            const data = await getAssistantInsights(stationId);
-            setAssistantData(data);
-        } catch (e: any) {
-            setAssistantError(e.message ?? 'Ошибка загрузки подсказок');
-        } finally {
-            setAssistantLoading(false);
-        }
     };
 
     const handleGlobalSearch = () => {
@@ -285,7 +271,24 @@ export default function DashboardPage() {
                         ))}
                     </div>
                     <div className="flex items-center gap-3 relative">
-                        <div className="flex items-center">
+                        <select
+                            value={stationId}
+                            onChange={async (e) => {
+                                const sid = e.target.value;
+                                setStationId(sid);
+                                window.localStorage.setItem('ktz_station_id', sid);
+                                window.history.replaceState({}, '', `/dashboard?stationId=${sid}`);
+                                await Promise.all([loadAll(sid), loadNotifications(sid)]);
+                            }}
+                            className="input-field !py-1.5 !px-3 font-medium text-sm text-gray-700 max-w-[200px]"
+                        >
+                            {stations.map((s: any) => (
+                                <option key={s.id} value={s.id}>
+                                    {s.name} ({s.trainRuns} поездов)
+                                </option>
+                            ))}
+                        </select>
+                        <div className="hidden md:flex items-center">
                             {['D', 'O', 'A'].map((l, i) => (
                                 <Avatar key={i} letter={l} color={['bg-sky-500', 'bg-emerald-500', 'bg-violet-500'][i]} />
                             ))}
@@ -362,27 +365,7 @@ export default function DashboardPage() {
                     )}
                     {seedError && <p className="text-red-500 text-sm mb-4">{seedError}</p>}
 
-                    {(assistantLoading || assistantData || assistantError) && (
-                        <div className="card mb-6">
-                            <div className="flex items-center justify-between mb-3">
-                                <h2 className="font-semibold text-gray-800">Подсказки ИИ для диспетчера</h2>
-                                <button className="btn-secondary text-xs py-1.5" onClick={handleAskAssistant}>Обновить</button>
-                            </div>
-                            {assistantLoading ? (
-                                <p className="text-sm text-gray-400">Загрузка подсказок...</p>
-                            ) : assistantError ? (
-                                <p className="text-sm text-red-500">{assistantError}</p>
-                            ) : (
-                                <ul className="space-y-1">
-                                    {(assistantData?.recommendations ?? []).map((r: string, idx: number) => (
-                                        <li key={idx} className="text-sm text-gray-600 flex gap-2">
-                                            <ChevronRight size={14} className="text-sky-500 mt-0.5" />{r}
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-                    )}
+
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
                         <StatCard icon={Train} iconBg="bg-sky-50 text-sky-600" count={analytics?.totalTrains ?? '—'} label="поездов" sub="Окно планирования" onMore={() => router.push(`/node?stationId=${stationId}`)} />
@@ -420,9 +403,6 @@ export default function DashboardPage() {
                         <div className="flex gap-2">
                             <button onClick={() => stationId && loadAll(stationId)} className="btn-secondary">
                                 <RefreshCw size={14} /> Обновить
-                            </button>
-                            <button className="btn-orange" onClick={handleAskAssistant}>
-                                <Sparkles size={14} /> {assistantLoading ? 'Загрузка...' : 'Спросить ИИ KTZ'}
                             </button>
                             <Link href={`/simulation?stationId=${stationId}`} className="btn-dark">
                                 <Plus size={14} /> Добавить событие
