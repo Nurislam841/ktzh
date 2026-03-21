@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import React, { useEffect, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
+import LocomotiveFleetWidget from '../../components/LocomotiveFleetWidget';
 
 // Dynamically import the map because Leaflet uses window which breaks SSR in Next.js
 const DynamicRailwayGISDashboard = dynamic(
@@ -38,6 +39,14 @@ export default function GisPage() {
                     <div className="flex-1 min-h-[700px] w-full shadow-sm rounded-2xl overflow-hidden bg-white border border-gray-100 p-2 relative z-0">
                         <DynamicRailwayGISDashboard />
                     </div>
+
+                    <LocomotiveFleetWidget
+                        className="mt-6"
+                        title="Сведения по локомотивам"
+                        subtitle="Отдельный информационный блок после карты. Таблица собрана для быстрого просмотра парка."
+                        collapsible
+                        defaultOpen
+                    />
                 </div>
             </div>
         </div>

@@ -14,8 +14,9 @@ import {
 import {
     Link2, AlertTriangle, Clock, RefreshCw,
     CheckCircle, XCircle, FileWarning, Search,
-    BarChart3, Play, ArrowUpDown,
+    BarChart3, Play, ArrowUpDown, Plus,
 } from 'lucide-react';
+import CreateBindingModal from '../../components/CreateBindingModal';
 
 const STATUS_MAP: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: 'Черновик', cls: 'bg-gray-100 text-gray-600' },
@@ -59,6 +60,8 @@ export default function BindingsPage() {
     const [periodId, setPeriodId] = useState('2026-03');
     const [statusFilter, setStatusFilter] = useState('');
     const [searchQuery, setSearchQuery] = useState('');
+
+    const [isCreateOpen, setIsCreateOpen] = useState(false);
 
     // Conflict check
     const [checking, setChecking] = useState(false);
@@ -239,6 +242,9 @@ export default function BindingsPage() {
                             </select>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button onClick={() => setIsCreateOpen(true)} className="btn-primary">
+                                <Plus size={14} /> Создать подвязку
+                            </button>
                             <button onClick={handleConflictCheck} disabled={checking} className="btn-orange">
                                 <Play size={14} /> {checking ? 'Проверка...' : 'Проверить конфликты'}
                             </button>
@@ -388,6 +394,16 @@ export default function BindingsPage() {
                         )}
                     </div>
                 </main>
+                <CreateBindingModal 
+                    isOpen={isCreateOpen} 
+                    onClose={() => setIsCreateOpen(false)} 
+                    onSuccess={() => {
+                        loadBindings();
+                        loadSummary();
+                    }}
+                    periodId={periodId}
+                    initialStationId={stationId}
+                />
             </div>
         </div>
     );

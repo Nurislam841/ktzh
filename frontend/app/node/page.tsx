@@ -179,20 +179,9 @@ export default function NodePage() {
                             <LocomotiveGanttChart 
                                 stationId={stationId}
                                 locomotives={resources.locomotives}
-                                trainRuns={filtered} // The planned allocations
+                                trainRuns={filtered}
                                 windowHours={hours}
-                                startDate={new Date()} // In reality, from the current visual window
-                                onOptimizeClick={(locoId) => {
-                                    if(confirm('Запустить оптимизатор LAP для устранения простоя?')) {
-                                        fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/optimizer/station/${stationId}/solve-lap`, { method: 'POST' })
-                                            .then(res => res.json())
-                                            .then(data => {
-                                                alert(data.message || 'Оптимизация завершена');
-                                                load(stationId, hours);
-                                            })
-                                            .catch(err => alert('Ошибка при оптимизации'));
-                                    }
-                                }}
+                                startDate={new Date()}
                             />
                         </div>
                     )}

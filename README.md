@@ -11,6 +11,11 @@
 - Backend: NestJS + Prisma + PostgreSQL
 - Frontend: Next.js 14 + Tailwind
 
+## Требования к Node.js
+
+Используй Node.js `20.x` или `22.x` LTS.
+Node.js `24.x` для этого репозитория не подходит: frontend на Next.js 14 может падать с ошибками вида `Cannot find module '.next/server/middleware-manifest.json'` или `pages-manifest.json`.
+
 ## Запуск локально (без Docker)
 
 Быстрый путь из корня:
@@ -65,6 +70,14 @@ npm run dev
 ```
 
 Frontend будет доступен на `http://localhost:3000`.
+
+Если frontend уже падал на Node.js `24`, после переключения версии очисти кэш сборки и подними его заново:
+
+```bash
+cd frontend
+rm -rf .next
+npm run dev
+```
 
 ## Загрузка данных
 

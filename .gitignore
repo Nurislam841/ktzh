@@ -23,6 +23,7 @@ build/
 .next/
 out/
 coverage/
+.temp_node/
 backend/.pgdata/
 
 # IDE

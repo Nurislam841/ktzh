@@ -41,4 +41,14 @@ export class NodeController {
     ) {
         return this.nodeService.getDecisionQueue(stationId, hours);
     }
+
+    @Get('locomotives')
+    async getGlobalLocomotives() {
+        return this.nodeService.getGlobalLocomotives();
+    }
+
+    @Get('trains')
+    async getTrains() {
+        return this.nodeService.getTrains();
+    }
 }

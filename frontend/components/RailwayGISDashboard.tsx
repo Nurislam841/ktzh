@@ -296,34 +296,7 @@ const RailwayGISDashboard = () => {
                                         </div>
                                     )}
 
-                                    <button
-                                        onClick={() => {
-                                            const btn = document.getElementById(`opt-btn-${station.id}`);
-                                            if (btn) {
-                                                btn.innerText = 'Optimizing...';
-                                                btn.setAttribute('disabled', 'true');
-                                            }
-                                            fetch(
-                                                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/optimizer/station/${station.id}/solve-lap`,
-                                                { method: 'POST' },
-                                            )
-                                                .then((res) => res.json())
-                                                .then((data) => {
-                                                    alert(data.message || 'Optimization complete');
-                                                    window.location.reload();
-                                                })
-                                                .catch(() => alert('Failed to run optimization'));
-                                        }}
-                                        id={`opt-btn-${station.id}`}
-                                        className={`mt-2 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-white transition-colors ${
-                                            hasHighIdle
-                                                ? 'bg-purple-600 shadow-sm shadow-purple-200 hover:bg-purple-700'
-                                                : 'bg-sky-600 hover:bg-sky-700'
-                                        }`}
-                                    >
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                                        {hasHighIdle ? 'Устранить простой (LAP)' : 'Run LAP Optimizer'}
-                                    </button>
+
                                 </div>
                             </Popup>
                         </Marker>
