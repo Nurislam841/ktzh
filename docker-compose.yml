@@ -1,4 +1,22 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ktz_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ktz_db
+      POSTGRES_USER: ktz
+      POSTGRES_PASSWORD: ktz_secret
+    ports:
+      - '55432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ 'CMD-SHELL', 'pg_isready -U ktz -d ktz_db' ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   redis:
     image: redis:7-alpine
     container_name: ktz_redis
@@ -14,31 +32,74 @@ services:
       retries: 5
 
   backend:
-    image: ghcr.io/${IMAGE_REPO:-adilzhan17}/ktz-backend:latest
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: ktz-backend-local
     container_name: ktz_backend
     restart: unless-stopped
-    env_file:
-      - ./backend/.env
     environment:
+      DATABASE_URL: postgresql://ktz:ktz_secret@postgres:5432/ktz_db
       REDIS_URL: redis://redis:6379
+      PORT: 3001
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-super-secret-admin-token-change-me}
+      NODE_ENV: production
     ports:
-      - '11434:3001'
+      - '3001:3001'
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3001/api/docs-json').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    command: >
+      sh -c "npx prisma db execute --file prisma/init.sql --schema prisma/schema.prisma &&
+      npx prisma db push &&
+      node dist/src/main.js"
+
+  backend-bootstrap:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: ktz-backend-local
+    container_name: ktz_backend_bootstrap
+    restart: "no"
+    environment:
+      BACKEND_URL: http://backend:3001
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-super-secret-admin-token-change-me}
+      DATA_DIR: /app/backend/data
+    depends_on:
+      backend:
+        condition: service_healthy
+    command: ["node", "scripts/docker-bootstrap.mjs"]
 
   frontend:
-    image: ghcr.io/${IMAGE_REPO:-adilzhan17}/ktz-frontend:latest
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    image: ktz-frontend-local
     container_name: ktz_frontend
     restart: unless-stopped
-    env_file:
-      - ./frontend/.env
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:3001
     ports:
-      - '8989:3000'
+      - '3000:3000'
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
+  postgres_data:
   redis_data:

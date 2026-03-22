@@ -1,0 +1,14 @@
+.git
+.github
+.DS_Store
+.temp_node
+.next
+out
+coverage
+node_modules
+**/node_modules
+**/.next
+**/dist
+**/.env
+backend/.pg
+backend/.pgdata

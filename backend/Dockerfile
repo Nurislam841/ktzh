@@ -1,23 +1,36 @@
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package*.json ./
+COPY backend/package*.json ./backend/
+COPY scripts ./scripts
+
+WORKDIR /app/backend
 RUN npm ci
 
-COPY . .
+COPY backend/. ./
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:20-bookworm-slim AS runner
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package*.json ./
-RUN npm ci --omit=dev
+COPY scripts ./scripts
 
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY prisma ./prisma
+WORKDIR /app/backend
+COPY --from=builder /app/backend/node_modules ./node_modules
+COPY --from=builder /app/backend/dist ./dist
+COPY backend/prisma ./prisma
+COPY backend/data ./data
+COPY backend/scripts ./scripts
 
 EXPOSE 3001
 
-CMD ["node", "dist/main"]
+CMD ["node", "dist/src/main.js"]
