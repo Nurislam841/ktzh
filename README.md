@@ -30,6 +30,37 @@ make frontend-dev
 
 Подробный сценарий: `docs/LOCAL_SETUP.md`
 
+## Запуск через Docker
+
+Самый простой способ для следующего разработчика поднять проект с общей демо-базой из репозитория:
+
+```bash
+docker compose up --build
+```
+
+Что делает этот сценарий:
+
+- поднимает `postgres`, `redis`, `backend`, `frontend`
+- применяет Prisma-миграции при старте backend
+- один раз импортирует данные из `backend/data`
+- затем создает операционные записи через `import-bootstrap`
+
+После старта сервисы будут доступны по адресам:
+
+- Frontend: `http://localhost:3000`
+- Backend: `http://localhost:3001`
+- Swagger: `http://localhost:3001/api/docs`
+- PostgreSQL: `localhost:55432`
+
+Если нужно полностью пересоздать БД и заново прогнать импорт:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Если нужно передать не репозиторные demo-данные, а точный снимок вашей живой БД, сначала сделай `pg_dump`, а затем замени источник инициализации Postgres или импортный набор данных.
+
 ### 1) Проверь `.env`
 
 `backend/.env` пример:
