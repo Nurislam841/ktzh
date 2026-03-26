@@ -1,0 +1,249 @@
+{
+  "generatedAt": "2026-03-26T10:33:48.549Z",
+  "totalBindings": 558,
+  "matchedBindings": 398,
+  "pairedBindings": 80,
+  "arrivalOnlyBindings": 139,
+  "departureOnlyBindings": 179,
+  "topStationsByMatches": [
+    {
+      "stationSheet": "Павлодар",
+      "matches": 92,
+      "paired": 32,
+      "avgDwellMinutes": 829,
+      "maxDwellMinutes": 1124
+    },
+    {
+      "stationSheet": "Алматы",
+      "matches": 73,
+      "paired": 19,
+      "avgDwellMinutes": 463,
+      "maxDwellMinutes": 2887
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "matches": 56,
+      "paired": 0,
+      "avgDwellMinutes": 673,
+      "maxDwellMinutes": 1414
+    },
+    {
+      "stationSheet": "Шымкент ",
+      "matches": 38,
+      "paired": 0,
+      "avgDwellMinutes": 479,
+      "maxDwellMinutes": 504
+    },
+    {
+      "stationSheet": "Арыс",
+      "matches": 35,
+      "paired": 0,
+      "avgDwellMinutes": 366,
+      "maxDwellMinutes": 416
+    },
+    {
+      "stationSheet": "Кокшетау",
+      "matches": 27,
+      "paired": 0,
+      "avgDwellMinutes": 313,
+      "maxDwellMinutes": 449
+    },
+    {
+      "stationSheet": "Костанай",
+      "matches": 26,
+      "paired": 0,
+      "avgDwellMinutes": 458,
+      "maxDwellMinutes": 583
+    },
+    {
+      "stationSheet": "Есиль",
+      "matches": 20,
+      "paired": 20,
+      "avgDwellMinutes": 1211,
+      "maxDwellMinutes": 1211
+    },
+    {
+      "stationSheet": "Тобол",
+      "matches": 18,
+      "paired": 9,
+      "avgDwellMinutes": 1218,
+      "maxDwellMinutes": 2607
+    },
+    {
+      "stationSheet": "Пресногорьковская ",
+      "matches": 8,
+      "paired": 0,
+      "avgDwellMinutes": 85,
+      "maxDwellMinutes": 85
+    },
+    {
+      "stationSheet": "Ерейментау ",
+      "matches": 5,
+      "paired": 0,
+      "avgDwellMinutes": 0,
+      "maxDwellMinutes": 0
+    }
+  ],
+  "topLongestDwells": [
+    {
+      "stationSheet": "Алматы",
+      "day": 21,
+      "arrivalTrainNumber": "106",
+      "departureTrainNumber": "105",
+      "dwellMinutes": 2887,
+      "dwellHours": 48.12
+    },
+    {
+      "stationSheet": "Алматы",
+      "day": 23,
+      "arrivalTrainNumber": "106",
+      "departureTrainNumber": "105",
+      "dwellMinutes": 2887,
+      "dwellHours": 48.12
+    },
+    {
+      "stationSheet": "Алматы",
+      "day": 27,
+      "arrivalTrainNumber": "106",
+      "departureTrainNumber": "105",
+      "dwellMinutes": 2887,
+      "dwellHours": 48.12
+    },
+    {
+      "stationSheet": "Алматы",
+      "day": 29,
+      "arrivalTrainNumber": "106",
+      "departureTrainNumber": "105",
+      "dwellMinutes": 2887,
+      "dwellHours": 48.12
+    },
+    {
+      "stationSheet": "Тобол",
+      "day": 18,
+      "arrivalTrainNumber": "081",
+      "departureTrainNumber": "082",
+      "dwellMinutes": 2607,
+      "dwellHours": 43.45
+    },
+    {
+      "stationSheet": "Тобол",
+      "day": 20,
+      "arrivalTrainNumber": "081",
+      "departureTrainNumber": "082",
+      "dwellMinutes": 2607,
+      "dwellHours": 43.45
+    },
+    {
+      "stationSheet": "Тобол",
+      "day": 22,
+      "arrivalTrainNumber": "081",
+      "departureTrainNumber": "082",
+      "dwellMinutes": 2607,
+      "dwellHours": 43.45
+    },
+    {
+      "stationSheet": "Тобол",
+      "day": 24,
+      "arrivalTrainNumber": "081",
+      "departureTrainNumber": "082",
+      "dwellMinutes": 2607,
+      "dwellHours": 43.45
+    },
+    {
+      "stationSheet": "Тобол",
+      "day": 26,
+      "arrivalTrainNumber": "081",
+      "departureTrainNumber": "082",
+      "dwellMinutes": 2607,
+      "dwellHours": 43.45
+    },
+    {
+      "stationSheet": "Тобол",
+      "day": 28,
+      "arrivalTrainNumber": "081",
+      "departureTrainNumber": "082",
+      "dwellMinutes": 2607,
+      "dwellHours": 43.45
+    },
+    {
+      "stationSheet": "Тобол",
+      "day": 30,
+      "arrivalTrainNumber": "081",
+      "departureTrainNumber": "082",
+      "dwellMinutes": 2607,
+      "dwellHours": 43.45
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 15,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 19,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 21,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 23,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 25,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 27,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 29,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 31,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    },
+    {
+      "stationSheet": "Жана-Есиль",
+      "day": 2,
+      "arrivalTrainNumber": null,
+      "departureTrainNumber": "048",
+      "dwellMinutes": 1414,
+      "dwellHours": 23.57
+    }
+  ]
+}
