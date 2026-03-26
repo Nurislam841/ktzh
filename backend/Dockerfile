@@ -26,6 +26,7 @@ COPY scripts ./scripts
 
 WORKDIR /app/backend
 COPY --from=builder /app/backend/node_modules ./node_modules
+COPY backend/package*.json ./
 COPY --from=builder /app/backend/dist ./dist
 COPY backend/prisma ./prisma
 COPY backend/data ./data

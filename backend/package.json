@@ -20,7 +20,10 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:seed": "ts-node prisma/seed.ts",
     "import:data": "ts-node scripts/import-data.ts",
-    "bootstrap:ops": "ts-node scripts/bootstrap-ops.ts"
+    "bootstrap:ops": "ts-node scripts/bootstrap-ops.ts",
+    "extract:astana-node": "node -r ts-node/register -e \"require('./scripts/extract-astana-node.ts')\"",
+    "build:astana-gitural": "node -r ts-node/register -e \"require('./scripts/build-astana-gitural.ts')\"",
+    "analyze:astana-turns": "node -r ts-node/register -e \"require('./scripts/analyze-astana-turns.ts')\""
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

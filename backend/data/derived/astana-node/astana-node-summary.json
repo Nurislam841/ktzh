@@ -1,0 +1,9 @@
+{
+  "sourcePath": "/Users/adilzhan/Desktop/ktz/backend/data/Расписания поездов действующие/Траф всех пасс. п-в на 2025-2026гг 21.10.25г..xlsx",
+  "serviceDayStart": "20:00",
+  "totalParsedTrains": 113,
+  "astanaNodeTrains": 41,
+  "astanaShoulderTrains": 48,
+  "uniqueAstanaTrainNumbers": 48,
+  "generatedAt": "2026-03-26T10:17:36.473Z"
+}
