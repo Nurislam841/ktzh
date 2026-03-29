@@ -13,6 +13,7 @@ import {
     Train,
     Link2,
     Globe,
+    Route,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -22,6 +23,7 @@ const sidebarItems = [
     { href: '/simulation', icon: Zap, label: 'Симуляция', id: 'simulation' },
     { href: '/versions', icon: ClipboardList, label: 'Версии', id: 'versions' },
     { href: '/bindings', icon: Link2, label: 'Подвязки', id: 'bindings' },
+    { href: '/graph', icon: Route, label: 'График', id: 'graph' },
     { href: '/gis', icon: Globe, label: 'R-Атлас (GIS)', id: 'gis' },
 ];
 

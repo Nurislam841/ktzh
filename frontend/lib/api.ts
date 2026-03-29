@@ -86,6 +86,15 @@ export async function getCrewCalls(stationId: string, hours?: number) {
     return fetchApi(`/crew-calls?${params.toString()}`);
 }
 
+export async function getGituralTimeline(filters?: { corridor?: string; trainNumber?: string; day?: number }) {
+    const params = new URLSearchParams();
+    if (filters?.corridor) params.set('corridor', filters.corridor);
+    if (filters?.trainNumber) params.set('trainNumber', filters.trainNumber);
+    if (typeof filters?.day === 'number') params.set('day', String(filters.day));
+    const query = params.toString();
+    return fetchApi(`/gitural/timeline${query ? `?${query}` : ''}`);
+}
+
 export async function updateCrewCallStatus(
     id: string,
     data: { status: 'PLANNED' | 'NOTIFIED' | 'CONFIRMED' | 'MISSED' | 'CANCELLED'; notes?: string },

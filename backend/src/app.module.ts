@@ -18,6 +18,7 @@ import { OptimizerModule } from './modules/optimizer/optimizer.module';
 import { LocomotiveStateModule } from './modules/locomotive-state/locomotive-state.module';
 import { GisModule } from './modules/gis/gis.module';
 import { CrewCallModule } from './modules/crew-call/crew-call.module';
+import { GituralModule } from './modules/gitural/gitural.module';
 
 @Module({
     imports: [
@@ -41,6 +42,7 @@ import { CrewCallModule } from './modules/crew-call/crew-call.module';
         LocomotiveStateModule,
         GisModule,
         CrewCallModule,
+        GituralModule,
     ],
 })
 export class AppModule { }
