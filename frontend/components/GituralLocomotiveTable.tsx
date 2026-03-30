@@ -180,6 +180,18 @@ export default function GituralLocomotiveTable({
         exactNorm: rows.filter((item) => item.normSource === 'ideal_exact').length,
     }), [rows]);
 
+    const selectedRowData = useMemo(() => {
+        return rows.find((row) => isSelectedRow(row, selectedPair, selectedTrainNumber)) ?? null;
+    }, [rows, selectedPair, selectedTrainNumber]);
+
+    const resetLocalFilters = () => {
+        setQuery('');
+        setShoulderFilter('');
+        setStatusFilter('');
+        setOnlyProblems(false);
+        setOnlyDeviation(false);
+    };
+
     const toggleSort = (nextKey: SortKey) => {
         if (sortKey === nextKey) {
             setSortDirection((current) => (current === 'asc' ? 'desc' : 'asc'));
@@ -191,22 +203,21 @@ export default function GituralLocomotiveTable({
 
     return (
         <div className="card mt-6 overflow-hidden border border-slate-200">
-            <div className="border-b border-slate-200 bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800 px-5 py-4 text-white">
+            <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#020617_0%,#0f172a_55%,#1e293b_100%)] px-5 py-4 text-white">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                     <div>
                         <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">
                             Факт → Подвязка → Идеал
                         </div>
-                        <h2 className="mt-2 text-xl font-bold">Таблица локомотивных состояний по узлу</h2>
+                        <h2 className="mt-2 text-xl font-black">Локомотивные состояния по узлу</h2>
                         <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-300">
-                            Таблица собирается из ниток графика, текущих подвязок ТЛ-11, идеальной модели прошлого периода и реального парка локомотивов.
-                            Номер локомотива подбирается через явную reconciliation-стратегию по плечу и депо, потому что прямого идентификатора локомотива в доступных подвязках нет.
+                            Рабочая таблица для проверки плеча, факта прибытия, нормы и перепростоя. Это не отдельный источник, а тот же срез, что и карта выше.
                         </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2 xl:min-w-[420px]">
                         <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Строк</div>
+                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Строк в срезе</div>
                             <div className="mt-1 text-2xl font-bold">{stats.total}</div>
                         </div>
                         <div className="rounded-2xl border border-white/10 bg-rose-500/10 px-4 py-3">
@@ -214,7 +225,7 @@ export default function GituralLocomotiveTable({
                             <div className="mt-1 text-2xl font-bold text-rose-100">{stats.critical}</div>
                         </div>
                         <div className="rounded-2xl border border-white/10 bg-amber-500/10 px-4 py-3">
-                            <div className="text-[11px] uppercase tracking-[0.18em] text-amber-200/80">Внимание</div>
+                            <div className="text-[11px] uppercase tracking-[0.18em] text-amber-200/80">Риск</div>
                             <div className="mt-1 text-2xl font-bold text-amber-100">{stats.warning}</div>
                         </div>
                         <div className="rounded-2xl border border-white/10 bg-emerald-500/10 px-4 py-3">
@@ -223,9 +234,43 @@ export default function GituralLocomotiveTable({
                         </div>
                     </div>
                 </div>
+
+                {selectedRowData && (
+                    <div className="mt-4 grid grid-cols-1 gap-2 rounded-[24px] border border-white/10 bg-white/5 p-3 lg:grid-cols-4">
+                        <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Выбранный локомотив</div>
+                            <div className="mt-1 font-mono text-lg font-black text-white">{selectedRowData.locomotiveNumber ?? '—'}</div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Плечо</div>
+                            <div className="mt-1 text-sm font-semibold text-white">{selectedRowData.shoulder ?? 'Не определено'}</div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Факт / отправление</div>
+                            <div className="mt-1 text-sm font-semibold text-white">{selectedRowData.arrival ?? '—'} → {selectedRowData.departure ?? '—'}</div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">Перепростой</div>
+                            <div className="mt-1 text-sm font-semibold text-white">{formatMinutes(selectedRowData.overDwellMinutes)}</div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-700">Уточнение табличного среза</div>
+                    {(query || shoulderFilter || statusFilter || onlyProblems || onlyDeviation) && (
+                        <button
+                            type="button"
+                            onClick={resetLocalFilters}
+                            className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
+                        >
+                            Сбросить локальные фильтры
+                        </button>
+                    )}
+                </div>
+
                 <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
                     <div className="relative w-full xl:max-w-md">
                         <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -303,7 +348,7 @@ export default function GituralLocomotiveTable({
                 </div>
             </div>
 
-            <div className="max-h-[560px] overflow-auto">
+            <div className="max-h-[640px] overflow-auto">
                 <table className="min-w-full border-separate border-spacing-0 text-sm">
                     <thead className="sticky top-0 z-20 bg-slate-950 text-white">
                         <tr>

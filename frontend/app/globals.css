@@ -42,7 +42,7 @@
   }
 
   .main-wrapper {
-    @apply ml-24 mr-4 mt-4 mb-4 min-h-[calc(100vh-2rem)] flex flex-col bg-white/95 backdrop-blur-3xl rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/60 overflow-hidden;
+    @apply ml-24 mr-4 mt-4 mb-4 min-h-[calc(100vh-2rem)] min-w-0 flex flex-col bg-white/95 backdrop-blur-3xl rounded-[2.5rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white/60 overflow-hidden;
   }
 
   .topbar {
@@ -50,7 +50,7 @@
   }
 
   .page-content {
-    @apply flex-1 px-8 py-8 overflow-y-auto;
+    @apply flex-1 min-w-0 px-8 py-8 overflow-y-auto;
   }
 
   /* ── Sidebar Icons ───────────────────────────────────── */

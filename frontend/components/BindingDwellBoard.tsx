@@ -17,6 +17,20 @@ function barClass(row: BindingIntelligenceRow) {
     return 'from-emerald-400 to-emerald-500';
 }
 
+function dwellTooltip(row: BindingIntelligenceRow) {
+    const bestCandidateLabel = row.bestCandidate
+        ? `№${row.bestCandidate.trainNumber}${row.bestCandidate.departureLabel ? ` · ${row.bestCandidate.departureLabel}` : ''}`
+        : 'кандидат не найден';
+
+    return [
+        `Текущий простой: ${formatMinutes(row.currentIdleMinutes)}`,
+        `Норматив: ${formatMinutes(row.normMinutes)}`,
+        `Перепростой сейчас: ${formatMinutes(row.overDwellNowMinutes ?? row.overDwellMinutes)}`,
+        `Ждать до лучшего поезда: ${formatMinutes(row.waitToBestMinutes)}`,
+        `Лучший кандидат: ${bestCandidateLabel}`,
+    ].join('\n');
+}
+
 export default function BindingDwellBoard({
     rows,
     selectedRowId,
@@ -78,13 +92,27 @@ export default function BindingDwellBoard({
                             </div>
 
                             <div>
-                                <div className="relative h-12 rounded-2xl border border-slate-200 bg-[#07111f] px-3">
+                                <div
+                                    className="group/bar relative h-12 rounded-2xl border border-slate-200 bg-[#07111f] px-3"
+                                    title={dwellTooltip(row)}
+                                    aria-label={dwellTooltip(row)}
+                                >
                                     <div className="absolute inset-y-2 left-3 right-3 rounded-full border border-dashed border-cyan-400/20" />
                                     <div className="absolute left-3 top-1/2 h-4 -translate-y-1/2 rounded-full bg-sky-400/20" style={{ width: normWidth }} />
                                     <div className={`absolute left-3 top-1/2 h-4 -translate-y-1/2 rounded-full bg-gradient-to-r ${barClass(row)}`} style={{ width: currentWidth }} />
                                     {row.waitToBestMinutes !== null && (
                                         <div className="absolute top-1/2 h-8 w-[2px] -translate-y-1/2 bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.65)]" style={{ left: `calc(0.75rem + ${bestLeft})` }} />
                                     )}
+                                    <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-[240px] -translate-x-1/2 rounded-2xl border border-slate-800 bg-slate-950 px-3 py-2 text-[11px] leading-5 text-slate-100 shadow-2xl lg:group-hover/bar:block lg:group-focus-within/bar:block">
+                                        <div className="font-bold text-white">Детали простоя</div>
+                                        <div className="mt-1 text-slate-300">Сейчас: {formatMinutes(row.currentIdleMinutes)}</div>
+                                        <div className="text-slate-300">Норма: {formatMinutes(row.normMinutes)}</div>
+                                        <div className={`${(row.overDwellNowMinutes ?? row.overDwellMinutes ?? 0) > 0 ? 'text-rose-300' : 'text-slate-300'}`}>
+                                            Перепростой: {formatMinutes(row.overDwellNowMinutes ?? row.overDwellMinutes)}
+                                        </div>
+                                        <div className="text-cyan-300">До лучшего поезда: {formatMinutes(row.waitToBestMinutes)}</div>
+                                        <div className="absolute left-1/2 top-0 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rotate-45 border-l border-t border-slate-800 bg-slate-950" />
+                                    </div>
                                     <div className="absolute left-3 top-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Простой</div>
                                     <div className="absolute right-3 top-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Лучший поезд</div>
                                 </div>
