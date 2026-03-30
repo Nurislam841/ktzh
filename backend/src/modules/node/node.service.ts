@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -127,6 +127,365 @@ export class NodeService {
                 id: t.id,
                 name: t.name,
                 status: t.status,
+            })),
+        };
+    }
+
+    async getSnapshot(stationId: string, at?: string) {
+        const snapshotAt = at ? new Date(at) : new Date();
+        if (Number.isNaN(snapshotAt.getTime())) {
+            throw new BadRequestException('Параметр at должен быть корректной датой/временем');
+        }
+
+        const windowStart = new Date(snapshotAt.getTime() - 12 * 60 * 60_000);
+        const windowEnd = new Date(snapshotAt.getTime() + 12 * 60 * 60_000);
+
+        const [station, versionAtTime] = await Promise.all([
+            this.prisma.station.findUnique({
+                where: { id: stationId },
+                select: { id: true, name: true, code: true },
+            }),
+            this.prisma.scheduleVersion.findFirst({
+                where: {
+                    stationId,
+                    createdAt: { lte: snapshotAt },
+                },
+                orderBy: { createdAt: 'desc' },
+                select: { id: true, createdAt: true },
+            }),
+        ]);
+
+        const latestVersion = versionAtTime ?? await this.prisma.scheduleVersion.findFirst({
+            where: { stationId },
+            orderBy: { createdAt: 'desc' },
+            select: { id: true, createdAt: true },
+        });
+
+        if (!latestVersion) {
+            return {
+                stationId,
+                stationName: station?.name ?? null,
+                stationCode: station?.code ?? null,
+                snapshotAt: snapshotAt.toISOString(),
+                versionId: null,
+                versionCreatedAt: null,
+                summary: {
+                    activeRoutes: 0,
+                    upcomingRoutes: 0,
+                    occupiedTracks: 0,
+                    freeTracks: 0,
+                    activeLocomotives: 0,
+                    idleLocomotives: 0,
+                    maintenanceLocomotives: 0,
+                    activeCrews: 0,
+                    idleCrews: 0,
+                    activeBindings: 0,
+                    recentEvents: 0,
+                    stationsInvolved: [],
+                },
+                activeAllocations: [],
+                upcomingAllocations: [],
+                tracks: [],
+                locomotives: [],
+                crews: [],
+                bindings: [],
+                recentEvents: [],
+            };
+        }
+
+        const [allocations, tracks, stationLocomotives, activeBindings, recentEvents] = await Promise.all([
+            this.prisma.allocation.findMany({
+                where: {
+                    scheduleVersionId: latestVersion.id,
+                    plannedDeparture: { gte: windowStart },
+                    plannedArrival: { lte: windowEnd },
+                },
+                include: {
+                    trainRun: {
+                        include: {
+                            train: true,
+                            originStation: { select: { id: true, name: true, code: true } },
+                            destinationStation: { select: { id: true, name: true, code: true } },
+                        },
+                    },
+                    assignedTrack: { select: { id: true, name: true } },
+                    assignedLocomotive: {
+                        include: {
+                            depot: { select: { id: true, name: true } },
+                            locationStation: { select: { id: true, name: true } },
+                        },
+                    },
+                    assignedCrew: { select: { id: true, status: true, availableFrom: true, requiredNoticeMinutes: true, depotId: true } },
+                },
+                orderBy: { plannedDeparture: 'asc' },
+            }),
+            this.prisma.track.findMany({
+                where: { stationId },
+                orderBy: { name: 'asc' },
+                select: {
+                    id: true,
+                    name: true,
+                    status: true,
+                    maintenanceFrom: true,
+                    maintenanceTo: true,
+                },
+            }),
+            this.prisma.locomotive.findMany({
+                where: { locationStationId: stationId },
+                include: {
+                    depot: { select: { id: true, name: true } },
+                    locationStation: { select: { id: true, name: true } },
+                },
+                orderBy: [{ status: 'asc' }, { availableFrom: 'asc' }],
+            }),
+            this.prisma.bindingPlan.findMany({
+                where: {
+                    turnaroundStationId: stationId,
+                    arrivalDt: { lte: snapshotAt },
+                    departureDt: { gte: snapshotAt },
+                },
+                include: {
+                    arrivalTrain: { select: { id: true, number: true } },
+                    departureTrain: { select: { id: true, number: true } },
+                    allocations: {
+                        include: {
+                            locomotive: {
+                                include: {
+                                    depot: { select: { id: true, name: true } },
+                                    locationStation: { select: { id: true, name: true } },
+                                },
+                            },
+                        },
+                    },
+                },
+                orderBy: { arrivalDt: 'asc' },
+            }),
+            this.prisma.operationalEvent.findMany({
+                where: {
+                    stationId,
+                    createdAt: { lte: snapshotAt },
+                },
+                orderBy: { createdAt: 'desc' },
+                take: 20,
+            }),
+        ]);
+
+        const activeAllocations = allocations.filter((allocation) =>
+            allocation.plannedArrival.getTime() <= snapshotAt.getTime()
+            && allocation.plannedDeparture.getTime() >= snapshotAt.getTime(),
+        );
+
+        const upcomingAllocations = allocations
+            .filter((allocation) => allocation.plannedDeparture.getTime() > snapshotAt.getTime())
+            .slice(0, 12);
+
+        const activeTrackMap = new Map(
+            activeAllocations
+                .filter((allocation) => allocation.assignedTrack)
+                .map((allocation) => [allocation.assignedTrack!.id, allocation]),
+        );
+        const activeLocoMap = new Map(
+            activeAllocations
+                .filter((allocation) => allocation.assignedLocomotive)
+                .map((allocation) => [allocation.assignedLocomotive!.id, allocation]),
+        );
+        const activeCrewMap = new Map(
+            activeAllocations
+                .filter((allocation) => allocation.assignedCrew)
+                .map((allocation) => [allocation.assignedCrew!.id, allocation]),
+        );
+
+        const locomotiveMap = new Map<string, any>();
+        stationLocomotives.forEach((locomotive) => {
+            locomotiveMap.set(locomotive.id, locomotive);
+        });
+        activeAllocations.forEach((allocation) => {
+            if (allocation.assignedLocomotive && !locomotiveMap.has(allocation.assignedLocomotive.id)) {
+                locomotiveMap.set(allocation.assignedLocomotive.id, allocation.assignedLocomotive);
+            }
+        });
+
+        const depotIds = Array.from(
+            new Set(
+                Array.from(locomotiveMap.values())
+                    .map((locomotive: any) => locomotive.depotId)
+                    .filter((value): value is string => Boolean(value)),
+            ),
+        );
+        const activeCrewIds = Array.from(activeCrewMap.keys());
+        const crews = depotIds.length || activeCrewIds.length
+            ? await this.prisma.crew.findMany({
+                where: {
+                    OR: [
+                        depotIds.length ? { depotId: { in: depotIds } } : undefined,
+                        activeCrewIds.length ? { id: { in: activeCrewIds } } : undefined,
+                    ].filter(Boolean) as any,
+                },
+                include: {
+                    depot: { select: { id: true, name: true } },
+                },
+                orderBy: [{ status: 'asc' }, { availableFrom: 'asc' }],
+            })
+            : [];
+
+        const formatAllocation = (allocation: any) => {
+            const conflictFlags = (allocation.conflictFlags ?? {}) as Record<string, boolean>;
+            return {
+                allocationId: allocation.id,
+                trainRunId: allocation.trainRun.id,
+                trainNumber: allocation.trainRun.train.number,
+                routeLabel: `${allocation.trainRun.originStation?.name ?? '—'} → ${allocation.trainRun.destinationStation?.name ?? '—'}`,
+                originStation: allocation.trainRun.originStation?.name ?? null,
+                destinationStation: allocation.trainRun.destinationStation?.name ?? null,
+                plannedArrival: allocation.plannedArrival.toISOString(),
+                plannedDeparture: allocation.plannedDeparture.toISOString(),
+                status: allocation.trainRun.status,
+                slotStatus: allocation.slotStatus,
+                trackName: allocation.assignedTrack?.name ?? null,
+                locomotiveLabel: allocation.assignedLocomotive
+                    ? `${allocation.assignedLocomotive.series}${allocation.assignedLocomotive.number}`
+                    : null,
+                crewId: allocation.assignedCrew?.id ?? null,
+                conflictCount: Object.values(conflictFlags).filter(Boolean).length,
+                conflictFlags,
+                notes: allocation.notes ?? null,
+            };
+        };
+
+        const snapshotTracks = tracks.map((track) => {
+            const activeAllocation = activeTrackMap.get(track.id);
+            const maintenanceActive =
+                track.status === 'MAINTENANCE'
+                || this.overlapsMaintenance(snapshotAt, track.maintenanceFrom, track.maintenanceTo);
+
+            return {
+                id: track.id,
+                name: track.name,
+                operationalStatus: maintenanceActive
+                    ? 'MAINTENANCE'
+                    : activeAllocation
+                        ? 'OCCUPIED'
+                        : 'FREE',
+                occupiedByTrainNumber: activeAllocation?.trainRun.train.number ?? null,
+                occupiedUntil: activeAllocation?.plannedDeparture?.toISOString?.() ?? null,
+                maintenanceFrom: track.maintenanceFrom?.toISOString?.() ?? null,
+                maintenanceTo: track.maintenanceTo?.toISOString?.() ?? null,
+            };
+        });
+
+        const snapshotLocomotives = Array.from(locomotiveMap.values()).map((locomotive: any) => {
+            const activeAllocation = activeLocoMap.get(locomotive.id);
+            const maintenanceActive =
+                locomotive.status === 'MAINTENANCE'
+                || this.overlapsMaintenance(snapshotAt, locomotive.maintenanceFrom, locomotive.maintenanceTo);
+
+            const operationalStatus = activeAllocation
+                ? 'WORKING'
+                : maintenanceActive
+                    ? 'MAINTENANCE'
+                    : locomotive.availableFrom.getTime() <= snapshotAt.getTime()
+                        ? 'IDLE'
+                        : 'UPCOMING';
+
+            return {
+                id: locomotive.id,
+                label: `${locomotive.series}${locomotive.number}`,
+                series: locomotive.series,
+                number: locomotive.number,
+                depotName: locomotive.depot?.name ?? null,
+                locationStation: locomotive.locationStation?.name ?? station?.name ?? null,
+                status: locomotive.status,
+                operationalStatus,
+                availableFrom: locomotive.availableFrom.toISOString(),
+                idleMinutes: operationalStatus === 'IDLE'
+                    ? Math.max(0, Math.round((snapshotAt.getTime() - locomotive.availableFrom.getTime()) / 60_000))
+                    : null,
+                currentTrainNumber: activeAllocation?.trainRun.train.number ?? null,
+                currentTrackName: activeAllocation?.assignedTrack?.name ?? null,
+                maintenanceFrom: locomotive.maintenanceFrom?.toISOString?.() ?? null,
+                maintenanceTo: locomotive.maintenanceTo?.toISOString?.() ?? null,
+            };
+        });
+
+        const snapshotCrews = crews.map((crew) => {
+            const activeAllocation = activeCrewMap.get(crew.id);
+            const operationalStatus = activeAllocation
+                ? 'WORKING'
+                : crew.status === 'UNAVAILABLE'
+                    ? 'UNAVAILABLE'
+                    : crew.status === 'RESTING'
+                        ? 'RESTING'
+                        : crew.availableFrom.getTime() <= snapshotAt.getTime()
+                            ? 'IDLE'
+                            : 'UPCOMING';
+
+            return {
+                id: crew.id,
+                depotName: crew.depot?.name ?? null,
+                status: crew.status,
+                operationalStatus,
+                availableFrom: crew.availableFrom.toISOString(),
+                requiredNoticeMinutes: crew.requiredNoticeMinutes,
+                currentTrainNumber: activeAllocation?.trainRun.train.number ?? null,
+            };
+        });
+
+        const snapshotBindings = activeBindings.map((binding) => {
+            const locomotive = binding.allocations[0]?.locomotive;
+            return {
+                id: binding.id,
+                status: binding.status,
+                arrivalDt: binding.arrivalDt.toISOString(),
+                departureDt: binding.departureDt.toISOString(),
+                dwellMinutes: binding.dwellMinutes,
+                arrivalTrainNumber: binding.arrivalTrain?.number ?? null,
+                departureTrainNumber: binding.departureTrain?.number ?? null,
+                locomotiveLabel: locomotive ? `${locomotive.series}${locomotive.number}` : null,
+                depotName: locomotive?.depot?.name ?? null,
+            };
+        });
+
+        const stationsInvolved = Array.from(
+            new Set(
+                [...activeAllocations, ...upcomingAllocations].flatMap((allocation) => [
+                    allocation.trainRun.originStation?.name,
+                    allocation.trainRun.destinationStation?.name,
+                ]).filter((value): value is string => Boolean(value)),
+            ),
+        ).sort((left, right) => left.localeCompare(right, 'ru'));
+
+        return {
+            stationId,
+            stationName: station?.name ?? null,
+            stationCode: station?.code ?? null,
+            snapshotAt: snapshotAt.toISOString(),
+            versionId: latestVersion.id,
+            versionCreatedAt: latestVersion.createdAt.toISOString(),
+            summary: {
+                activeRoutes: activeAllocations.length,
+                upcomingRoutes: upcomingAllocations.length,
+                occupiedTracks: snapshotTracks.filter((track) => track.operationalStatus === 'OCCUPIED').length,
+                freeTracks: snapshotTracks.filter((track) => track.operationalStatus === 'FREE').length,
+                activeLocomotives: snapshotLocomotives.filter((locomotive) => locomotive.operationalStatus === 'WORKING').length,
+                idleLocomotives: snapshotLocomotives.filter((locomotive) => locomotive.operationalStatus === 'IDLE').length,
+                maintenanceLocomotives: snapshotLocomotives.filter((locomotive) => locomotive.operationalStatus === 'MAINTENANCE').length,
+                activeCrews: snapshotCrews.filter((crew) => crew.operationalStatus === 'WORKING').length,
+                idleCrews: snapshotCrews.filter((crew) => crew.operationalStatus === 'IDLE').length,
+                activeBindings: snapshotBindings.length,
+                recentEvents: recentEvents.length,
+                stationsInvolved,
+            },
+            activeAllocations: activeAllocations.map(formatAllocation),
+            upcomingAllocations: upcomingAllocations.map(formatAllocation),
+            tracks: snapshotTracks,
+            locomotives: snapshotLocomotives,
+            crews: snapshotCrews,
+            bindings: snapshotBindings,
+            recentEvents: recentEvents.map((event) => ({
+                id: event.id,
+                type: event.type,
+                createdAt: event.createdAt.toISOString(),
+                payload: event.payload,
             })),
         };
     }

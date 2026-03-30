@@ -1,468 +1,469 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import {
-    getAnalytics,
-    getScheduleVersions,
-    getNodeOverview,
-    getStations,
-    pickBestStationId,
-    seedData,
-    getDashboardNotifications,
+  getAnalytics,
+  getBindings,
+  getDashboardNotifications,
+  getEvents,
+  getNodeOverview,
+  getNodeResources,
+  getNodeSnapshot,
+  getScheduleVersions,
+  getStations,
+  pickBestStationId,
 } from '../../lib/api';
-
-import LocomotiveFleetWidget from '../../components/LocomotiveFleetWidget';
 import {
-    Train, Clock, AlertTriangle, FileText, Gauge, Cog, Users, CalendarDays,
-    Search, Bell, LayoutGrid, Timer, ListTodo, CalendarRange,
-    MoreHorizontal, Paperclip, MessageCircle, Sprout, Zap, RefreshCw,
-    Sparkles, Plus, Flag, CircleCheck, ChevronRight,
+  AlertTriangle,
+  CalendarRange,
+  Clock3,
+  Database,
+  Download,
+  Gauge,
+  LayoutGrid,
+  MapPin,
+  RefreshCw,
+  Search,
+  Table2,
+  Timer,
+  Train,
+  Users,
 } from 'lucide-react';
 
-function Avatar({ letter, color }: { letter: string; color: string }) {
-    return (
-        <div className={`w-7 h-7 rounded-full ${color} flex items-center justify-center text-white text-xs font-bold -ml-1 first:ml-0 border-2 border-white`}>
-            {letter}
-        </div>
-    );
+type DashboardView = 'board' | 'feed' | 'table' | 'calendar';
+type FeedTone = 'info' | 'warning' | 'critical';
+
+type FeedItem = {
+  id: string;
+  timestamp: string;
+  tone: FeedTone;
+  title: string;
+  message: string;
+  source: string;
+};
+
+const TAB_META: Array<{ key: DashboardView; label: string; icon: any }> = [
+  { key: 'board', label: 'Доска', icon: LayoutGrid },
+  { key: 'feed', label: 'Лента', icon: Timer },
+  { key: 'table', label: 'Таблица', icon: Table2 },
+  { key: 'calendar', label: 'Календарь', icon: CalendarRange },
+];
+
+const TRAIN_STATUS_META: Record<string, { label: string; cls: string }> = {
+  PLANNED: { label: 'Запланирован', cls: 'badge-gray' },
+  READY: { label: 'Готов', cls: 'badge-blue' },
+  WAITING_SLOT: { label: 'Ждёт слот', cls: 'badge-yellow' },
+  LOCO_ASSIGNED: { label: 'Тяга назначена', cls: 'badge-blue' },
+  CREW_CONFIRMED: { label: 'Бригада подтверждена', cls: 'badge-blue' },
+  DELAYED: { label: 'Задержан', cls: 'badge-red' },
+  ACTIVE: { label: 'В работе', cls: 'badge-blue' },
+  DEPARTED: { label: 'Отправлен', cls: 'badge-green' },
+  ARRIVED: { label: 'Прибыл', cls: 'badge-green' },
+  CANCELLED: { label: 'Отменён', cls: 'badge-red' },
+};
+
+const EVENT_LABELS: Record<string, string> = {
+  TRACK_CLOSURE: 'Закрытие пути',
+  TRACK_BLOCKED: 'Блокировка пути',
+  LOCOMOTIVE_FAILURE: 'Отказ локомотива',
+  CREW_ABSENCE: 'Отсутствие бригады',
+  CREW_UNAVAILABLE: 'Недоступность бригады',
+  LATE_TRAIN: 'Опоздание поезда',
+  TRAIN_DELAY: 'Задержка поезда',
+  MAINTENANCE: 'Техобслуживание',
+  MAINTENANCE_STARTED: 'Начало ремонта',
+  MAINTENANCE_ENDED: 'Завершение ремонта',
+  WEATHER: 'Погодные ограничения',
+  CAPACITY_CONFLICT: 'Конфликт пропускной способности',
+};
+
+function normalizeView(value: string | null): DashboardView {
+  if (value === 'feed' || value === 'table' || value === 'calendar') return value;
+  return 'board';
 }
 
-function StatCard({
-    icon: Icon,
-    iconBg,
-    count,
-    label,
-    sub,
-    onMore,
-}: {
-    icon: any;
-    iconBg: string;
-    count: string | number;
-    label: string;
-    sub: string;
-    onMore?: () => void;
-}) {
-    return (
-        <div className="stat-card">
-            <div className={`stat-icon ${iconBg}`}><Icon size={20} /></div>
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="text-xs text-gray-400 mb-0.5">{sub}</div>
-                        <div className="font-semibold text-gray-900">{count} {label}</div>
-                    </div>
-                    <button className="text-gray-300 hover:text-gray-500 p-1" onClick={onMore}><MoreHorizontal size={14} /></button>
-                </div>
-            </div>
-        </div>
-    );
+function formatDateTime(value?: string | Date | null) {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
-function conflictLabel(key: string) {
-    const map: Record<string, string> = {
-        track: 'Путь',
-        locomotive: 'Локомотив',
-        crew: 'Бригада',
-        headway: 'Интервал',
-        track_conflict: 'Конфликт пути',
-        headway_violation: 'Нарушение интервала',
-        crew_violation: 'Нарушение по бригаде',
-        loco_double_booking: 'Двойное назначение локомотива',
-    };
-    return map[key] ?? key;
+function formatTime(value?: string | Date | null) {
+  if (!value) return '—';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
-function KanbanCard({ run, onOpen }: { run: any; onOpen: () => void }) {
-    const pMap: Record<string, { cls: string; label: string }> = {
-        PASSENGER: { cls: 'priority-high', label: 'Пассажирский' },
-        FREIGHT: { cls: 'priority-medium', label: 'Грузовой' },
-        OTHER: { cls: 'priority-low', label: 'Прочий' },
-    };
-    const p = pMap[run.trainRun?.priority] ?? pMap.OTHER;
-    const dep = new Date(run.plannedDeparture);
-    const sched = new Date(run.trainRun?.scheduledDeparture);
-    const delayMin = Math.round((dep.getTime() - sched.getTime()) / 60_000);
-    const hasConflict = Object.values(run.conflictFlags ?? {}).some(Boolean);
-    const conflictCount = Object.entries(run.conflictFlags ?? {}).filter(([, v]) => Boolean(v)).length;
+function formatInputDateTime(value?: string | Date | null) {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
 
-    return (
-        <div className="kanban-card group">
-            <div className="flex items-center gap-2 mb-2">
-                <span className={p.cls}><Flag size={10} className="inline -mt-0.5 mr-0.5" />{p.label}</span>
-                {hasConflict && <span className="badge-red"><AlertTriangle size={10} className="inline -mt-0.5 mr-0.5" />Конфликт</span>}
-            </div>
+function formatMinutes(value?: number | null) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '—';
+  const hours = Math.floor(value / 60);
+  const minutes = Math.max(0, value % 60);
+  if (!hours) return `${minutes} мин`;
+  return `${hours} ч ${String(minutes).padStart(2, '0')} мин`;
+}
 
-            <p className="font-semibold text-gray-900 text-sm leading-tight mb-0.5">
-                Поезд №{run.trainRun?.number}
-            </p>
-            <p className="text-xs text-gray-400 mb-3">
-                {run.track?.name ?? 'Нет пути'} · {run.locomotive?.label ?? 'Нет локомотива'}
-            </p>
+function eventTone(type: string): FeedTone {
+  if (type === 'LOCOMOTIVE_FAILURE' || type === 'TRACK_CLOSURE' || type === 'TRACK_BLOCKED') return 'critical';
+  if (type === 'CREW_ABSENCE' || type === 'CREW_UNAVAILABLE' || type === 'TRAIN_DELAY' || type === 'LATE_TRAIN') return 'warning';
+  return 'info';
+}
 
-            <div className="mb-3">
-                <div className="flex justify-between text-xs text-gray-400 mb-1">
-                    <span>Задержка</span>
-                    <span>{delayMin > 0 ? `+${delayMin} мин` : 'По графику'}</span>
-                </div>
-                <div className="progress-bar">
-                    <div
-                        className={`progress-fill ${delayMin > 30 ? 'bg-red-500' : delayMin > 0 ? 'bg-amber-400' : 'bg-green-500'}`}
-                        style={{ width: `${Math.min(100, Math.max(5, (delayMin / 60) * 100))}%` }}
-                    />
-                </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-                <div className="text-xs text-gray-400 flex items-center gap-1">
-                    <Clock size={12} />
-                    <span>{dep.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-gray-400">
-                    <span className="flex items-center gap-0.5"><Paperclip size={11} />{run.notes ? '1' : '0'}</span>
-                    <span className="flex items-center gap-0.5"><MessageCircle size={11} />{conflictCount}</span>
-                    <button className="text-gray-300 hover:text-gray-600" onClick={onOpen}><ChevronRight size={12} /></button>
-                </div>
-            </div>
-            {hasConflict && (
-                <div className="mt-2 text-[11px] text-red-500 truncate">
-                    {Object.entries(run.conflictFlags ?? {})
-                        .filter(([, v]) => Boolean(v))
-                        .map(([k]) => conflictLabel(k))
-                        .join(', ')}
-                </div>
-            )}
-        </div>
-    );
+function downloadCsv(filename: string, rows: Array<Record<string, string | number | null>>) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(','),
+    ...rows.map((row) => headers.map((header) => `"${String(row[header] ?? '').replace(/"/g, '""')}"`).join(',')),
+  ].join('\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+  const href = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = href;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(href);
 }
 
 export default function DashboardPage() {
-    const router = useRouter();
-    const [stationId, setStationId] = useState('');
-    const [stations, setStations] = useState<any[]>([]);
-    const [analytics, setAnalytics] = useState<any>(null);
-    const [versions, setVersions] = useState<any>(null);
-    const [nodeData, setNodeData] = useState<any>(null);
-    const [loading, setLoading] = useState(false);
-    const [seeding, setSeeding] = useState(false);
-    const [seedError, setSeedError] = useState('');
-    const [notificationsOpen, setNotificationsOpen] = useState(false);
-    const [notificationsLoading, setNotificationsLoading] = useState(false);
-    const [notificationsData, setNotificationsData] = useState<any>(null);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const stationParam = searchParams.get('stationId') ?? '';
+  const view = normalizeView(searchParams.get('view'));
+  const snapshotAtParam = searchParams.get('at') ?? '';
 
-    const loadAll = useCallback(async (sid: string) => {
-        setLoading(true);
-        try {
-            const [a, v, n] = await Promise.all([getAnalytics(sid), getScheduleVersions(sid), getNodeOverview(sid)]);
-            setAnalytics(a); setVersions(v); setNodeData(n);
-        } catch { }
-        finally { setLoading(false); }
-    }, []);
+  const [stationId, setStationId] = useState('');
+  const [stations, setStations] = useState<any[]>([]);
+  const [analytics, setAnalytics] = useState<any>(null);
+  const [versions, setVersions] = useState<any>(null);
+  const [overview, setOverview] = useState<any>(null);
+  const [resources, setResources] = useState<any>(null);
+  const [bindings, setBindings] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any>(null);
+  const [events, setEvents] = useState<any[]>([]);
+  const [snapshot, setSnapshot] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [feedLoading, setFeedLoading] = useState(false);
+  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  const [calendarDraftAt, setCalendarDraftAt] = useState('');
+  const [tableSearch, setTableSearch] = useState('');
+  const [tableStatus, setTableStatus] = useState('');
 
-    const resolveStationId = useCallback(async () => {
+  const syncRoute = useCallback((next: { stationId?: string; view?: DashboardView; at?: string | null }, replace = false) => {
+    const params = new URLSearchParams(searchParams.toString());
+    const nextStationId = next.stationId ?? params.get('stationId') ?? '';
+    const nextView = next.view ?? normalizeView(params.get('view'));
+    const nextAt = next.at === undefined ? params.get('at') : next.at;
+    if (nextStationId) params.set('stationId', nextStationId); else params.delete('stationId');
+    if (nextView === 'board') params.delete('view'); else params.set('view', nextView);
+    if (nextView === 'calendar' && nextAt) params.set('at', nextAt); else params.delete('at');
+    const href = `/dashboard${params.toString() ? `?${params.toString()}` : ''}`;
+    if (replace) router.replace(href); else router.push(href);
+  }, [router, searchParams]);
+
+  const loadCore = useCallback(async (sid: string) => {
+    if (!sid) return;
+    setLoading(true);
+    try {
+      const [a, v, o, r, n, b] = await Promise.all([
+        getAnalytics(sid),
+        getScheduleVersions(sid, { limit: 8 }),
+        getNodeOverview(sid),
+        getNodeResources(sid),
+        getDashboardNotifications(sid),
+        getBindings({ stationId: sid, take: 100 }),
+      ]);
+      setAnalytics(a); setVersions(v); setOverview(o); setResources(r); setNotifications(n); setBindings(b.items ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const loadFeed = useCallback(async (sid: string) => {
+    if (!sid) return;
+    setFeedLoading(true);
+    try {
+      const data = await getEvents(sid);
+      setEvents(data.events ?? []);
+    } finally {
+      setFeedLoading(false);
+    }
+  }, []);
+
+  const loadSnapshot = useCallback(async (sid: string, at?: string) => {
+    if (!sid) return;
+    setSnapshotLoading(true);
+    try {
+      setSnapshot(await getNodeSnapshot(sid, at));
+    } finally {
+      setSnapshotLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const stationList = await getStations();
+      if (cancelled) return;
+      setStations(stationList.stations ?? []);
+      let resolved = stationParam;
+      if (!resolved || !stationList.stations.some((station: any) => station.id === resolved)) {
         const fromStorage = window.localStorage.getItem('ktz_station_id') ?? '';
-        const stations = await getStations();
-        if (fromStorage && stations.stations.some(s => s.id === fromStorage)) {
-            return fromStorage;
-        }
-        return pickBestStationId(stations.stations);
-    }, []);
+        resolved = fromStorage && stationList.stations.some((station: any) => station.id === fromStorage)
+          ? fromStorage
+          : pickBestStationId(stationList.stations);
+      }
+      if (cancelled) return;
+      setStationId(resolved);
+      if (resolved) {
+        window.localStorage.setItem('ktz_station_id', resolved);
+        if (resolved !== stationParam) syncRoute({ stationId: resolved }, true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stationParam, syncRoute]);
 
-    const loadNotifications = useCallback(async (sid: string) => {
-        if (!sid) return;
-        setNotificationsLoading(true);
-        try {
-            const data = await getDashboardNotifications(sid);
-            setNotificationsData(data);
-        } finally {
-            setNotificationsLoading(false);
-        }
-    }, []);
+  useEffect(() => {
+    if (stationId) void loadCore(stationId);
+  }, [loadCore, stationId]);
 
-    useEffect(() => {
-        let mounted = true;
-        (async () => {
-            let sid = new URLSearchParams(window.location.search).get('stationId') ?? '';
-            try {
-                const stationsReq = await getStations();
-                if (mounted) setStations(stationsReq.stations);
-                const isValidSid = sid && stationsReq.stations.some((s: any) => s.id === sid);
-                if (!isValidSid) {
-                    sid = await resolveStationId();
-                    if (sid) {
-                        window.history.replaceState({}, '', `/dashboard?stationId=${sid}`);
-                    }
-                }
-            } catch (e) {
-                if (!sid) {
-                    try { sid = await resolveStationId(); } catch { }
-                }
-            }
+  useEffect(() => {
+    if (view === 'feed' && stationId) void loadFeed(stationId);
+  }, [loadFeed, stationId, view]);
 
-            if (!mounted) return;
-            setStationId(sid);
-            if (sid) {
-                window.localStorage.setItem('ktz_station_id', sid);
-                await Promise.all([loadAll(sid), loadNotifications(sid)]);
-            }
-        })();
-        return () => { mounted = false; };
-    }, [loadAll, loadNotifications, resolveStationId]);
+  useEffect(() => {
+    if (view === 'calendar') setCalendarDraftAt(formatInputDateTime(snapshotAtParam || new Date()));
+  }, [snapshotAtParam, view]);
 
-    const handleSeed = async () => {
-        setSeeding(true); setSeedError('');
-        try {
-            const r: any = await seedData();
-            if (r.stationId) {
-                setStationId(r.stationId);
-                window.localStorage.setItem('ktz_station_id', r.stationId);
-                window.history.replaceState({}, '', `/dashboard?stationId=${r.stationId}`);
-                await Promise.all([loadAll(r.stationId), loadNotifications(r.stationId)]);
-            }
-        } catch (e: any) { setSeedError(e.message); }
-        finally { setSeeding(false); }
-    };
+  useEffect(() => {
+    if (view === 'calendar' && stationId) void loadSnapshot(stationId, snapshotAtParam || undefined);
+  }, [loadSnapshot, snapshotAtParam, stationId, view]);
 
-    const handleGlobalSearch = () => {
-        if (!stationId) return;
-        const q = (window.prompt('Введите № поезда или название пути:') ?? '').trim();
-        if (!q) return;
-        router.push(`/node?stationId=${stationId}&q=${encodeURIComponent(q)}`);
-    };
+  const selectedStation = stations.find((station) => station.id === stationId) ?? null;
+  const totalConflicts = Object.values(analytics?.conflictsCountByType ?? {}).reduce((sum, value) => sum + Number(value || 0), 0);
 
-    const handleNotificationsToggle = async () => {
-        const next = !notificationsOpen;
-        setNotificationsOpen(next);
-        if (next && stationId) {
-            await loadNotifications(stationId);
-        }
-    };
+  const boardColumns = useMemo(() => {
+    const items: any[] = overview?.trainRuns ?? [];
+    return [
+      { title: 'План', dot: 'bg-slate-400', items: items.filter((item) => item.trainRun?.status === 'PLANNED') },
+      { title: 'В работе', dot: 'bg-sky-500', items: items.filter((item) => ['READY', 'LOCO_ASSIGNED', 'CREW_CONFIRMED', 'ACTIVE'].includes(item.trainRun?.status)) },
+      { title: 'Риски', dot: 'bg-rose-500', items: items.filter((item) => Object.values(item.conflictFlags ?? {}).some(Boolean) || new Date(item.plannedDeparture).getTime() > new Date(item.trainRun?.scheduledDeparture).getTime()) },
+      { title: 'Завершено', dot: 'bg-emerald-500', items: items.filter((item) => ['DEPARTED', 'ARRIVED', 'CANCELLED'].includes(item.trainRun?.status)) },
+    ];
+  }, [overview]);
 
-    const trains: any[] = nodeData?.trainRuns ?? [];
-    const grouped = {
-        planned: trains.filter(t => t.trainRun?.status === 'PLANNED'),
-        active: trains.filter(t => ['ACTIVE', 'READY', 'LOCO_ASSIGNED', 'CREW_CONFIRMED'].includes(t.trainRun?.status)),
-        conflicts: trains.filter(t => Object.values(t.conflictFlags ?? {}).some(Boolean)),
-        departed: trains.filter(t => ['DEPARTED', 'ARRIVED', 'CANCELLED'].includes(t.trainRun?.status)),
-    };
+  const feedItems = useMemo<FeedItem[]>(() => {
+    const fromEvents: FeedItem[] = events.map((event: any) => ({
+      id: `event-${event.id}`,
+      timestamp: event.createdAt,
+      tone: eventTone(event.type),
+      title: EVENT_LABELS[event.type] ?? event.type,
+      message: 'Событие зафиксировано в operational event stream станции.',
+      source: 'OperationalEvent',
+    }));
 
-    const hour = new Date().getHours();
-    const greeting = hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
-    const totalConflicts = analytics ? Object.values(analytics.conflictsCountByType as Record<string, number>).reduce((a, b) => a + b, 0) : 0;
-    const unreadCount = notificationsData?.unreadCount ?? 0;
+    const fromIdle: FeedItem[] = (resources?.locomotives ?? []).map((locomotive: any) => {
+      const idleMinutes = Math.max(0, Math.round((Date.now() - new Date(locomotive.availableFrom).getTime()) / 60000));
+      return {
+        id: `idle-${locomotive.id}`,
+        timestamp: locomotive.availableFrom,
+        tone: idleMinutes >= 180 ? 'critical' : idleMinutes >= 60 ? 'warning' : 'info',
+        title: `Начало простоя локомотива ${locomotive.label}`,
+        message: `Локомотив свободен с ${formatDateTime(locomotive.availableFrom)}. Текущий простой: ${formatMinutes(idleMinutes)}.`,
+        source: 'Locomotive.availableFrom',
+      };
+    });
 
-    return (
-        <div className="flex min-h-screen">
-            <Sidebar stationId={stationId} />
-            <div className="main-wrapper flex-1">
+    const fromBindings: FeedItem[] = bindings.map((binding: any) => ({
+      id: `binding-${binding.id}`,
+      timestamp: binding.updatedAt ?? binding.createdAt ?? binding.departureDt,
+      tone: binding.status === 'CONFLICT' ? 'critical' : binding.status === 'DRAFT' ? 'warning' : 'info',
+      title: `Подвязка №${binding.arrivalTrain?.number ?? '—'} → №${binding.departureTrain?.number ?? '—'}`,
+      message: `Станция ${binding.turnaroundStation?.name ?? '—'}, простой ${formatMinutes(binding.dwellMinutes)}.`,
+      source: 'BindingPlan',
+    }));
 
-                <header className="topbar">
-                    <div className="flex items-center gap-1 bg-gray-100/80 p-1.5 rounded-full shadow-inner">
-                        {[
-                            { label: 'Обзор', href: `/dashboard?stationId=${stationId}` },
-                            { label: 'Активность', href: `/node?stationId=${stationId}` },
-                            { label: 'График', href: `/versions?stationId=${stationId}` },
-                            { label: 'События', href: `/simulation?stationId=${stationId}` },
-                            { label: 'Аналитика', href: `/node?stationId=${stationId}&filter=CONFLICTS` },
-                        ].map((t, i) => (
-                            <Link key={t.label} href={t.href} className={i === 0 ? 'nav-tab-active' : 'nav-tab'}>{t.label}</Link>
-                        ))}
-                    </div>
-                    <div className="flex items-center gap-3 relative">
-                        <select
-                            value={stationId}
-                            onChange={async (e) => {
-                                const sid = e.target.value;
-                                setStationId(sid);
-                                window.localStorage.setItem('ktz_station_id', sid);
-                                window.history.replaceState({}, '', `/dashboard?stationId=${sid}`);
-                                await Promise.all([loadAll(sid), loadNotifications(sid)]);
-                            }}
-                            className="input-field !py-1.5 !px-3 font-medium text-sm text-gray-700 max-w-[200px]"
-                        >
-                            {stations.map((s: any) => (
-                                <option key={s.id} value={s.id}>
-                                    {s.name} ({s.trainRuns} поездов)
-                                </option>
-                            ))}
-                        </select>
-                        <div className="hidden md:flex items-center">
-                            {['D', 'O', 'A'].map((l, i) => (
-                                <Avatar key={i} letter={l} color={['bg-sky-500', 'bg-emerald-500', 'bg-violet-500'][i]} />
-                            ))}
-                            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-xs text-gray-500 -ml-1 border-2 border-white">+10</div>
-                        </div>
-                        <button className="sidebar-icon !w-8 !h-8" onClick={handleGlobalSearch}><Search size={16} /></button>
-                        <button className="sidebar-icon !w-8 !h-8 relative" onClick={handleNotificationsToggle}>
-                            <Bell size={16} />
-                            {unreadCount > 0 && <span className="absolute -top-1 -right-1 text-[10px] min-w-4 h-4 px-1 rounded-full bg-red-500 text-white flex items-center justify-center">{Math.min(unreadCount, 9)}</span>}
-                        </button>
-                        <div className="w-8 h-8 rounded-full bg-sky-600 flex items-center justify-center text-white text-sm font-bold">D</div>
+    return [...fromEvents, ...fromIdle, ...fromBindings]
+      .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+      .slice(0, 40);
+  }, [bindings, events, resources]);
 
-                        {notificationsOpen && (
-                            <div className="absolute top-11 right-0 z-20 w-96 bg-white border border-gray-100 rounded-2xl shadow-xl p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                    <p className="font-semibold text-sm text-gray-800">Уведомления</p>
-                                    <button className="text-xs text-sky-600" onClick={() => stationId && loadNotifications(stationId)}>Обновить</button>
-                                </div>
-                                {notificationsLoading ? (
-                                    <p className="text-xs text-gray-400">Загрузка...</p>
-                                ) : (notificationsData?.items ?? []).length === 0 ? (
-                                    <p className="text-xs text-gray-400">Уведомлений пока нет.</p>
-                                ) : (
-                                    <div className="max-h-72 overflow-y-auto space-y-2">
-                                        {(notificationsData?.items ?? []).map((n: any) => (
-                                            <div key={n.id} className="rounded-xl border border-gray-100 p-2">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${n.level === 'critical' ? 'bg-red-100 text-red-600' : n.level === 'warning' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>{n.level === 'critical' ? 'Критично' : n.level === 'warning' ? 'Внимание' : 'Инфо'}</span>
-                                                    <span className="text-[11px] text-gray-400">{new Date(n.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                </div>
-                                                <p className="text-xs font-semibold text-gray-700 mt-1">{n.title}</p>
-                                                <p className="text-xs text-gray-500">{n.message}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                </header>
+  const tableRows = useMemo(() => {
+    const search = tableSearch.trim().toLowerCase();
+    return (overview?.trainRuns ?? []).map((item: any) => {
+      const delayMinutes = Math.max(0, Math.round((new Date(item.plannedDeparture).getTime() - new Date(item.trainRun?.scheduledDeparture).getTime()) / 60000));
+      return {
+        id: item.allocationId,
+        trainNumber: item.trainRun?.number ?? '',
+        route: `${item.trainRun?.origin?.name ?? '—'} → ${item.trainRun?.destination?.name ?? '—'}`,
+        status: item.trainRun?.status ?? '',
+        statusLabel: TRAIN_STATUS_META[item.trainRun?.status]?.label ?? item.trainRun?.status ?? '—',
+        plannedArrival: item.plannedArrival,
+        plannedDeparture: item.plannedDeparture,
+        trackName: item.track?.name ?? '—',
+        locomotive: item.locomotive?.label ?? '—',
+        crew: item.crew?.id ? item.crew.id.slice(0, 8) : '—',
+        slotStatus: item.slotStatus ?? '—',
+        delayMinutes,
+        conflictCount: Object.values(item.conflictFlags ?? {}).filter(Boolean).length,
+      };
+    }).filter((row: any) => {
+      if (tableStatus && row.status !== tableStatus) return false;
+      if (!search) return true;
+      return [row.trainNumber, row.route, row.trackName, row.locomotive, row.crew, row.slotStatus].join(' ').toLowerCase().includes(search);
+    }).sort((left: any, right: any) => new Date(left.plannedDeparture).getTime() - new Date(right.plannedDeparture).getTime());
+  }, [overview, tableSearch, tableStatus]);
 
-                <main className="page-content">
-                    <div className="mb-8">
-                        <h1 className="text-4xl tracking-tight font-bold text-gray-900 mb-2">{greeting}, диспетчер</h1>
-                        <p className="text-gray-500 text-lg">Контролируйте движение поездов, конфликты и изменения расписания.</p>
-                    </div>
+  const exportTable = useCallback(() => {
+    downloadCsv('dashboard-table.csv', tableRows.map((row: any) => ({
+      'Поезд': row.trainNumber,
+      'Маршрут': row.route,
+      'Статус': row.statusLabel,
+      'Прибытие': formatDateTime(row.plannedArrival),
+      'Отправление': formatDateTime(row.plannedDeparture),
+      'Путь': row.trackName,
+      'Локомотив': row.locomotive,
+      'Бригада': row.crew,
+      'Слот': row.slotStatus,
+      'Отклонение, мин': row.delayMinutes,
+      'Конфликтов': row.conflictCount,
+    })));
+  }, [tableRows]);
 
-                    {!stationId ? (
-                        <div className="announce mb-6">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center flex-shrink-0">
-                                <Train size={18} className="text-white" />
-                            </div>
-                            <div className="flex-1">
-                                <span className="font-semibold text-gray-900">Система КТЖ готова.</span>
-                                <span className="text-gray-500 ml-2">Заполните демо-данные, чтобы сразу начать симуляцию пересчета расписания.</span>
-                            </div>
-                            <button onClick={handleSeed} disabled={seeding} className="btn-orange flex-shrink-0">
-                                {seeding ? <><RefreshCw size={14} className="animate-spin" /> Заполнение...</> : <><Sprout size={14} /> Заполнить демо-данные</>}
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="announce mb-6">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-sky-400 to-blue-600 flex items-center justify-center flex-shrink-0">
-                                <CircleCheck size={18} className="text-white" />
-                            </div>
-                            <p className="flex-1 text-sm text-gray-600">
-                                <span className="font-semibold text-gray-900">Станция активна.</span>{' '}Перепланирование в реальном времени включено.
-                                <code className="text-sky-600 ml-2 text-xs bg-sky-50 px-2 py-0.5 rounded-lg">{stationId.slice(0, 8)}…</code>
-                            </p>
-                            <Link href={`/simulation?stationId=${stationId}`} className="btn-orange flex-shrink-0">
-                                <Zap size={14} /> Открыть симуляцию
-                            </Link>
-                        </div>
-                    )}
-                    {seedError && <p className="text-red-500 text-sm mb-4">{seedError}</p>}
-
-
-
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                        <StatCard icon={Train} iconBg="bg-sky-50 text-sky-600" count={analytics?.totalTrains ?? '—'} label="поездов" sub="Окно планирования" onMore={() => router.push(`/node?stationId=${stationId}`)} />
-                        <StatCard icon={AlertTriangle} iconBg="bg-red-50 text-red-500" count={totalConflicts} label="конфликтов" sub="Не решено" onMore={() => router.push(`/node?stationId=${stationId}&filter=CONFLICTS`)} />
-                        
-                        {/* New Idle Time Metrics */}
-                        <StatCard 
-                            icon={Timer} 
-                            iconBg={((analytics?.avgIdleTimeMinutes ?? 0) > 120) ? "bg-purple-100 text-purple-700" : "bg-purple-50 text-purple-600"} 
-                            count={`${Math.floor((analytics?.avgIdleTimeMinutes ?? 0) / 60)}ч ${Math.floor((analytics?.avgIdleTimeMinutes ?? 0) % 60)}м`} 
-                            label="простой" 
-                            sub={`В среднем по ${analytics?.totalIdleLocos ?? 0} локомотивам`} 
-                            onMore={() => router.push(`/gis?stationId=${stationId}`)} 
-                        />
-                        
-                        <StatCard icon={Gauge} iconBg="bg-green-50 text-green-600" count={`${analytics?.trackOccupancyRate ?? 0}%`} label="пути" sub="Занятость" onMore={() => router.push(`/node?stationId=${stationId}`)} />
-                        <StatCard icon={Cog} iconBg="bg-indigo-50 text-indigo-600" count={`${analytics?.locomotiveUtilization ?? 0}%`} label="локомотивы" sub="Использование" onMore={() => router.push(`/node?stationId=${stationId}`)} />
-                        <StatCard icon={Users} iconBg="bg-orange-50 text-orange-600" count={`${analytics?.crewUtilization ?? 0}%`} label="бригады" sub="Использование" onMore={() => router.push(`/node?stationId=${stationId}`)} />
-                        <StatCard icon={CalendarDays} iconBg="bg-teal-50 text-teal-600" count={(versions as any)?.versions?.[0] ? 'Есть' : '—'} label="последняя" sub="Версия графика" onMore={() => router.push(`/versions?stationId=${stationId}`)} />
-                    </div>
-
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-1 bg-gray-50 border border-gray-100 rounded-full p-1.5 shadow-inner">
-                            {[
-                                { icon: LayoutGrid, label: 'Доска' },
-                                { icon: Timer, label: 'Лента' },
-                                { icon: ListTodo, label: 'Таблица' },
-                                { icon: CalendarRange, label: 'Календарь' },
-                            ].map((t, i) => (
-                                <button key={t.label} className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-300 ${i === 0 ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`} onClick={() => router.push(`/node?stationId=${stationId}`)}>
-                                    <t.icon size={16} /> {t.label}
-                                </button>
-                            ))}
-                        </div>
-                        <div className="flex gap-2">
-                            <button onClick={() => stationId && loadAll(stationId)} className="btn-secondary">
-                                <RefreshCw size={14} /> Обновить
-                            </button>
-                            <Link href={`/simulation?stationId=${stationId}`} className="btn-dark">
-                                <Plus size={14} /> Добавить событие
-                            </Link>
-                        </div>
-                    </div>
-
-                    {loading ? (
-                        <div className="grid grid-cols-4 gap-4">
-                            {[...Array(4)].map((_, i) => (
-                                <div key={i} className="bg-white rounded-2xl border border-gray-100 p-4 animate-pulse">
-                                    <div className="h-4 bg-gray-100 rounded mb-4 w-24" />
-                                    {[...Array(3)].map((_, j) => <div key={j} className="h-32 bg-gray-50 rounded-xl mb-3" />)}
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            {[
-                                { title: 'Запланировано', dot: 'bg-gray-400', count: grouped.planned.length, badge: 'bg-gray-100 text-gray-500', items: grouped.planned, empty: 'Нет запланированных поездов', group: 'PLANNED' },
-                                { title: 'В работе', dot: 'bg-amber-400', count: grouped.active.length, badge: 'bg-amber-100 text-amber-600', items: grouped.active, empty: 'Нет активных поездов', group: 'ACTIVE' },
-                                { title: 'Конфликты', dot: 'bg-red-400', count: grouped.conflicts.length, badge: 'bg-red-100 text-red-500', items: grouped.conflicts, empty: null, group: 'CONFLICTS' },
-                                { title: 'Завершено', dot: 'bg-green-500', count: grouped.departed.length, badge: 'bg-green-100 text-green-600', items: grouped.departed, empty: 'Пока пусто', group: 'DEPARTED' },
-                            ].map(col => (
-                                <div key={col.title} className="kanban-col">
-                                    <div className="kanban-header">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`w-2 h-2 rounded-full ${col.dot} inline-block`} />
-                                            <span className="text-sm font-semibold text-gray-600">{col.title}</span>
-                                            <span className={`w-5 h-5 rounded-full text-xs font-bold flex items-center justify-center ${col.badge}`}>{col.count}</span>
-                                        </div>
-                                        <button className="text-gray-300 hover:text-gray-500" onClick={() => {
-                                            if (col.group === 'CONFLICTS') {
-                                                router.push(`/node?stationId=${stationId}&filter=CONFLICTS`);
-                                            } else {
-                                                router.push(`/node?stationId=${stationId}&group=${col.group}`);
-                                            }
-                                        }}><MoreHorizontal size={14} /></button>
-                                    </div>
-                                    {col.items.slice(0, 5).map((r: any, i: number) => (
-                                        <KanbanCard
-                                            key={i}
-                                            run={r}
-                                            onOpen={() => router.push(`/node?stationId=${stationId}&q=${encodeURIComponent(r.trainRun?.number ?? '')}`)}
-                                        />
-                                    ))}
-                                    {col.items.length === 0 && col.title === 'Конфликты' ? (
-                                        <div className="kanban-card text-center py-6 border-dashed">
-                                            <CircleCheck size={24} className="mx-auto text-green-500 mb-1" />
-                                            <p className="text-xs text-gray-400">Конфликтов нет!</p>
-                                        </div>
-                                    ) : col.items.length === 0 && (
-                                        <p className="text-xs text-gray-400 text-center py-6">{col.empty}</p>
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </main>
+  return (
+    <div className="flex min-h-screen">
+      <Sidebar stationId={stationId} />
+      <div className="main-wrapper flex-1">
+        <header className="topbar">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-900">Операционная панель</span>
+              {selectedStation && <span className="badge-blue"><MapPin size={10} />{selectedStation.name}</span>}
             </div>
-        </div>
-    );
+            <div className="mt-1 text-xs text-slate-400">Вкладки разделены по реальным режимам: board, feed, table и calendar snapshot.</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <select value={stationId} onChange={(event) => { const next = event.target.value; setStationId(next); window.localStorage.setItem('ktz_station_id', next); syncRoute({ stationId: next }, true); }} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none">
+              {stations.map((station: any) => <option key={station.id} value={station.id}>{station.name} ({station.trainRuns})</option>)}
+            </select>
+            <button onClick={() => stationId && void loadCore(stationId)} className="btn-secondary" disabled={loading || feedLoading || snapshotLoading}>
+              <RefreshCw size={14} className={loading || feedLoading || snapshotLoading ? 'animate-spin' : ''} />
+              Обновить
+            </button>
+          </div>
+        </header>
+
+        <main className="page-content space-y-6">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight text-slate-950">
+              {view === 'board' && 'Доска текущего состояния'}
+              {view === 'feed' && 'Лента простоев и событий'}
+              {view === 'table' && 'Табличный режим внесённых данных'}
+              {view === 'calendar' && 'Календарный snapshot'}
+            </h1>
+            <p className="mt-2 text-sm text-slate-500">
+              {view === 'board' && 'Доска показывает текущие allocations/train runs последней версии расписания и больше не уводит на простои.'}
+              {view === 'feed' && 'Лента — единственная вкладка с потоком событий простоев и операционных изменений.'}
+              {view === 'table' && 'Таблица — живой data-table из Allocation, TrainRun, Track, Locomotive и Crew.'}
+              {view === 'calendar' && 'Календарь выбирает дату и время и грузит реальный snapshot станции на этот timestamp.'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="stat-card"><div className="stat-icon bg-sky-50 text-sky-600"><Train size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Маршруты</div><div className="mt-1 text-2xl font-black text-slate-950">{analytics?.totalTrains ?? 0}</div><div className="mt-1 text-xs text-slate-500">Latest schedule version</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-rose-50 text-rose-600"><AlertTriangle size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Конфликты</div><div className="mt-1 text-2xl font-black text-slate-950">{notifications?.summary?.totalConflicts ?? totalConflicts}</div><div className="mt-1 text-xs text-slate-500">Analytics + conflict flags</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-violet-50 text-violet-600"><Gauge size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Локомотивы</div><div className="mt-1 text-2xl font-black text-slate-950">{resources?.summary?.locomotives ?? 0}</div><div className="mt-1 text-xs text-slate-500">Свободны: {resources?.summary?.availableLocomotives ?? 0}</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-emerald-50 text-emerald-600"><Users size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Бригады</div><div className="mt-1 text-2xl font-black text-slate-950">{resources?.summary?.crews ?? 0}</div><div className="mt-1 text-xs text-slate-500">Свободны: {resources?.summary?.availableCrews ?? 0}</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-amber-50 text-amber-600"><Clock3 size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Версии</div><div className="mt-1 text-2xl font-black text-slate-950">{versions?.total ?? 0}</div><div className="mt-1 text-xs text-slate-500">Pending: {notifications?.summary?.pendingApprovals ?? 0}</div></div></div>
+          </div>
+
+          <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex flex-wrap items-center gap-2 rounded-full bg-slate-100 p-1.5">
+                {TAB_META.map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <button key={tab.key} onClick={() => tab.key === 'calendar' ? syncRoute({ stationId, view: 'calendar', at: snapshotAtParam || new Date().toISOString() }) : syncRoute({ stationId, view: tab.key, at: null })} className={view === tab.key ? 'nav-tab-active flex items-center gap-2' : 'nav-tab flex items-center gap-2'}>
+                      <Icon size={15} />
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                {(view === 'board' ? ['Allocation', 'TrainRun', 'ScheduleVersion'] : view === 'feed' ? ['OperationalEvent', 'BindingPlan', 'Locomotive.availableFrom'] : view === 'table' ? ['Allocation', 'Track', 'Locomotive', 'Crew'] : ['Node snapshot', 'Track', 'BindingPlan']).map((item) => <span key={item} className="badge-gray"><Database size={10} />{item}</span>)}
+              </div>
+            </div>
+          </div>
+
+          {loading && <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500 shadow-sm">Загружаю реальное состояние станции...</div>}
+
+          {!loading && view === 'board' && (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
+              {boardColumns.map((column) => (
+                <div key={column.title} className="kanban-col">
+                  <div className="kanban-header"><div className="flex items-center gap-2"><span className={`inline-block h-2 w-2 rounded-full ${column.dot}`} /><span className="text-sm font-semibold text-slate-700">{column.title}</span><span className="badge-gray">{column.items.length}</span></div></div>
+                  {column.items.slice(0, 6).map((item: any) => (
+                    <div key={item.allocationId} className="kanban-card">
+                      <div className="flex items-center justify-between gap-3"><div><div className="font-semibold text-slate-900">Поезд №{item.trainRun?.number ?? '—'}</div><div className="mt-1 text-xs text-slate-400">{item.trainRun?.origin?.name ?? '—'} → {item.trainRun?.destination?.name ?? '—'}</div></div><span className={TRAIN_STATUS_META[item.trainRun?.status]?.cls ?? 'badge-gray'}>{TRAIN_STATUS_META[item.trainRun?.status]?.label ?? item.trainRun?.status ?? '—'}</span></div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500"><div>Путь: <span className="font-semibold text-slate-700">{item.track?.name ?? '—'}</span></div><div>План: <span className="font-semibold text-slate-700">{formatTime(item.plannedDeparture)}</span></div><div>Локомотив: <span className="font-semibold text-slate-700">{item.locomotive?.label ?? '—'}</span></div><div>Бригада: <span className="font-semibold text-slate-700">{item.crew?.id ? item.crew.id.slice(0, 8) : '—'}</span></div></div>
+                    </div>
+                  ))}
+                  {column.items.length === 0 && <div className="rounded-[20px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-xs text-slate-400">В этом столбце сейчас нет записей.</div>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!loading && view === 'feed' && (
+            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between"><div><div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Feed</div><h2 className="mt-1 text-lg font-black text-slate-950">Поток простоев и операционных изменений</h2></div><div className="text-xs text-slate-400">{feedItems.length} событий</div></div>
+              {feedLoading ? <div className="mt-6 text-sm text-slate-400">Загружаю события...</div> : <div className="mt-6 space-y-3">{feedItems.map((item) => <div key={item.id} className="rounded-[24px] border border-slate-100 bg-slate-50/70 p-4"><div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"><div><div className="flex flex-wrap items-center gap-2"><span className={item.tone === 'critical' ? 'badge-red' : item.tone === 'warning' ? 'badge-yellow' : 'badge-blue'}>{item.tone === 'critical' ? 'Критично' : item.tone === 'warning' ? 'Внимание' : 'Инфо'}</span><span className="badge-gray">{item.source}</span></div><div className="mt-3 text-base font-bold text-slate-950">{item.title}</div><div className="mt-1 text-sm text-slate-600">{item.message}</div></div><div className="text-xs text-slate-400">{formatDateTime(item.timestamp)}</div></div></div>)}{feedItems.length === 0 && <div className="rounded-[22px] border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-400">Событий для ленты пока нет.</div>}</div>}
+            </div>
+          )}
+
+          {!loading && view === 'table' && (
+            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div><div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Table</div><h2 className="mt-1 text-lg font-black text-slate-950">Табличное представление allocations</h2></div>
+                <div className="flex flex-wrap gap-2"><div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={tableSearch} onChange={(event) => setTableSearch(event.target.value)} placeholder="Поезд, путь, локомотив" className="input-field min-w-[260px] pl-9" /></div><select value={tableStatus} onChange={(event) => setTableStatus(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none"><option value="">Все статусы</option>{Object.entries(TRAIN_STATUS_META).map(([status, meta]) => <option key={status} value={status}>{meta.label}</option>)}</select><button onClick={exportTable} className="btn-secondary"><Download size={14} />Экспорт CSV</button></div>
+              </div>
+              <div className="mt-5 overflow-hidden rounded-[24px] border border-slate-100"><div className="max-h-[620px] overflow-auto"><table className="min-w-full border-separate border-spacing-0 text-sm"><thead className="sticky top-0 bg-white"><tr>{['Поезд', 'Маршрут', 'Статус', 'Прибытие', 'Отправление', 'Путь', 'Локомотив', 'Бригада', 'Слот', 'Отклонение', 'Конфликты'].map((label) => <th key={label} className="border-b border-slate-100 px-4 py-3 text-left text-xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</th>)}</tr></thead><tbody>{tableRows.map((row: any) => <tr key={row.id} className="bg-white hover:bg-slate-50/80"><td className="border-b border-slate-100 px-4 py-4 font-mono font-bold text-sky-700">#{row.trainNumber}</td><td className="border-b border-slate-100 px-4 py-4 text-slate-700">{row.route}</td><td className="border-b border-slate-100 px-4 py-4"><span className={TRAIN_STATUS_META[row.status]?.cls ?? 'badge-gray'}>{row.statusLabel}</span></td><td className="border-b border-slate-100 px-4 py-4 text-slate-700">{formatDateTime(row.plannedArrival)}</td><td className="border-b border-slate-100 px-4 py-4 text-slate-700">{formatDateTime(row.plannedDeparture)}</td><td className="border-b border-slate-100 px-4 py-4 font-semibold text-slate-900">{row.trackName}</td><td className="border-b border-slate-100 px-4 py-4 text-slate-700">{row.locomotive}</td><td className="border-b border-slate-100 px-4 py-4 text-slate-500">{row.crew}</td><td className="border-b border-slate-100 px-4 py-4 text-slate-500">{row.slotStatus}</td><td className="border-b border-slate-100 px-4 py-4">{row.delayMinutes > 0 ? <span className="badge-yellow">+{row.delayMinutes} мин</span> : <span className="badge-green">По графику</span>}</td><td className="border-b border-slate-100 px-4 py-4">{row.conflictCount > 0 ? <span className="badge-red">{row.conflictCount}</span> : <span className="badge-green">0</span>}</td></tr>)}{tableRows.length === 0 && <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-slate-400">Для выбранных фильтров нет записей.</td></tr>}</tbody></table></div></div>
+            </div>
+          )}
+
+          {!loading && view === 'calendar' && (
+            <>
+              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                  <div><div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Calendar snapshot</div><h2 className="mt-1 text-lg font-black text-slate-950">Выбор даты и времени</h2></div>
+                  <div className="flex flex-wrap items-center gap-2"><input type="datetime-local" value={calendarDraftAt} onChange={(event) => setCalendarDraftAt(event.target.value)} className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none" /><button onClick={() => { const parsed = new Date(calendarDraftAt); if (!Number.isNaN(parsed.getTime())) syncRoute({ stationId, view: 'calendar', at: parsed.toISOString() }); }} className="btn-primary">Показать срез</button><button onClick={() => { const now = new Date(); setCalendarDraftAt(formatInputDateTime(now)); syncRoute({ stationId, view: 'calendar', at: now.toISOString() }); }} className="btn-secondary">Сейчас</button></div>
+                </div>
+              </div>
+              {snapshotLoading ? <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500 shadow-sm">Формирую snapshot...</div> : <div className="grid grid-cols-1 gap-4 xl:grid-cols-2"><div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Сводка</div><h3 className="mt-1 text-lg font-black text-slate-950">{formatDateTime(snapshot?.snapshotAt)}</h3><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><div className="rounded-[20px] bg-slate-50 p-4">Активные маршруты: <span className="font-bold text-slate-950">{snapshot?.summary?.activeRoutes ?? 0}</span></div><div className="rounded-[20px] bg-slate-50 p-4">Занятые пути: <span className="font-bold text-slate-950">{snapshot?.summary?.occupiedTracks ?? 0}</span></div><div className="rounded-[20px] bg-slate-50 p-4">Локомотивы в работе: <span className="font-bold text-slate-950">{snapshot?.summary?.activeLocomotives ?? 0}</span></div><div className="rounded-[20px] bg-slate-50 p-4">Бригады в работе: <span className="font-bold text-slate-950">{snapshot?.summary?.activeCrews ?? 0}</span></div></div></div><div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Состояние</div><h3 className="mt-1 text-lg font-black text-slate-950">Реальный состав snapshot</h3><div className="mt-4 space-y-3 text-sm"><div className="rounded-[20px] bg-slate-50 p-4">Путей: <span className="font-bold text-slate-950">{snapshot?.tracks?.length ?? 0}</span></div><div className="rounded-[20px] bg-slate-50 p-4">Локомотивов: <span className="font-bold text-slate-950">{snapshot?.locomotives?.length ?? 0}</span></div><div className="rounded-[20px] bg-slate-50 p-4">Бригад: <span className="font-bold text-slate-950">{snapshot?.crews?.length ?? 0}</span></div><div className="rounded-[20px] bg-slate-50 p-4">Подвязок: <span className="font-bold text-slate-950">{snapshot?.bindings?.length ?? 0}</span></div></div></div></div>}
+            </>
+          )}
+        </main>
+      </div>
+    </div>
+  );
 }

@@ -5,5 +5,6 @@ import { GituralService } from './gitural.service';
 @Module({
   controllers: [GituralController],
   providers: [GituralService],
+  exports: [GituralService],
 })
 export class GituralModule {}

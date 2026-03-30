@@ -26,6 +26,16 @@ export class NodeController {
         return this.nodeService.getOverview(stationId, from, to, hours);
     }
 
+    @Get('snapshot')
+    @ApiQuery({ name: 'stationId', required: true })
+    @ApiQuery({ name: 'at', required: false, description: 'ISO timestamp для моментального среза' })
+    async getSnapshot(
+        @Query('stationId') stationId: string,
+        @Query('at') at?: string,
+    ) {
+        return this.nodeService.getSnapshot(stationId, at);
+    }
+
     @Get('resources')
     @ApiQuery({ name: 'stationId', required: true })
     async getResources(@Query('stationId') stationId: string) {

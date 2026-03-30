@@ -1,6 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
+import {
+  buildLocomotiveTableRows,
+  loadIdealNormLookup,
+  parseParkWorkbook,
+} from './gitural-locomotive-table';
 
 type StopRecord = {
   station: string;
@@ -90,13 +95,26 @@ export class GituralService {
   private readonly summaryPath = path.join(this.derivedDir, 'astana-gitural-summary.json');
   private readonly bindingsPath = path.join(this.derivedDir, 'astana-loco-bindings.json');
   private readonly turnReportPath = path.join(this.derivedDir, 'astana-turn-report.json');
+  private readonly parkPath = path.resolve(process.cwd(), 'data', 'Парк КТЖ-ПЛ на 01.01.2026г.xlsx');
+  private readonly idealBindingsPath = path.resolve(
+    process.cwd(),
+    'data',
+    'Подвязки 2024-2025',
+    'ТЛ-11',
+    'с 15.12. 2024 г Новый график KZ4Acт ТЛ11.xlsx',
+  );
+
+  private parsedParkPromise: Promise<ReturnType<typeof parseParkWorkbook>> | null = null;
+  private idealNormLookupPromise: Promise<ReturnType<typeof loadIdealNormLookup>> | null = null;
 
   async getTimeline(corridor?: string, trainNumber?: string, day?: number) {
-    const [summary, trains, bindings, turnarounds] = await Promise.all([
+    const [summary, trains, bindings, turnarounds, parkLocomotives, idealNormLookup] = await Promise.all([
       this.readJson<GituralSummary>(this.summaryPath),
       this.readJson<NodeTrainWindow[]>(this.windowsPath),
       this.readJson<BindingEvent[]>(this.bindingsPath),
       this.readJson<TurnaroundRecord[]>(this.turnReportPath),
+      this.getParkLocomotives(),
+      this.getIdealNormLookup(),
     ]);
 
     const corridors = Array.from(
@@ -110,7 +128,7 @@ export class GituralService {
     });
 
     const visibleTrainNumbers = new Set(filtered.map((item) => item.trainNumber));
-    const relatedBindings = bindings
+    const relatedBindingsAll = bindings
       .filter((item) => {
         if (typeof day === 'number' && item.day !== day) return false;
         return (
@@ -122,10 +140,9 @@ export class GituralService {
         ...item,
         arrivalOffsetMinutes: item.arrivalTime ? this.toServiceOffsetMinutes(item.arrivalTime) : null,
         departureOffsetMinutes: item.departureTime ? this.toServiceOffsetMinutes(item.departureTime) : null,
-      }))
-      .slice(0, 200);
+      }));
 
-    const relatedTurnarounds = turnarounds
+    const relatedTurnaroundsAll = turnarounds
       .filter((item) => {
         if (typeof day === 'number' && item.day !== day) return false;
         return (
@@ -137,12 +154,21 @@ export class GituralService {
         ...item,
         arrivalAstanaOffsetMinutes: item.arrivalAstanaTime ? this.toServiceOffsetMinutes(item.arrivalAstanaTime) : null,
         departureAstanaOffsetMinutes: item.departureAstanaTime ? this.toServiceOffsetMinutes(item.departureAstanaTime) : null,
-      }))
-      .slice(0, 120);
+      }));
+
+    const relatedBindings = relatedBindingsAll.slice(0, 200);
+    const relatedTurnarounds = relatedTurnaroundsAll.slice(0, 120);
 
     const days = Array.from(new Set(bindings.map((item) => item.day))).sort((a, b) => a - b);
     const routePairs = this.buildRoutePairs(filtered);
     const stopOperations = this.buildStopOperations(filtered, relatedBindings, relatedTurnarounds);
+    const locomotiveTable = buildLocomotiveTableRows({
+      bindings: relatedBindingsAll,
+      turnarounds: relatedTurnaroundsAll,
+      windows: filtered.length ? filtered : trains,
+      idealNormLookup,
+      parkLocomotives,
+    });
 
     return {
       summary,
@@ -156,6 +182,7 @@ export class GituralService {
       turnarounds: relatedTurnarounds,
       routePairs,
       stopOperations,
+      locomotiveTable,
       total: filtered.length,
     };
   }
@@ -201,6 +228,27 @@ export class GituralService {
     } catch {
       throw new NotFoundException(`Derived gitural data not found: ${filePath}`);
     }
+  }
+
+  private async getParkLocomotives() {
+    if (!this.parsedParkPromise) {
+      this.parsedParkPromise = Promise.resolve(parseParkWorkbook(this.parkPath, this.loadXlsx()));
+    }
+    return this.parsedParkPromise;
+  }
+
+  private async getIdealNormLookup() {
+    if (!this.idealNormLookupPromise) {
+      this.idealNormLookupPromise = Promise.resolve(
+        loadIdealNormLookup(this.idealBindingsPath, this.loadXlsx()),
+      );
+    }
+    return this.idealNormLookupPromise;
+  }
+
+  private loadXlsx() {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    return require('xlsx');
   }
 
   private toServiceOffsetMinutes(time: string): number {

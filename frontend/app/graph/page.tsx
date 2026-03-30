@@ -1,10 +1,148 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, RefreshCw, Route, Search, Waypoints, GitBranch, Clock3, CalendarDays } from 'lucide-react';
+import { BarChart3, CalendarDays, Clock3, GitBranch, RefreshCw, Route, Search, Waypoints } from 'lucide-react';
 import Sidebar from '../../components/Sidebar';
+import GituralLocomotiveTable from '../../components/GituralLocomotiveTable';
 import GituralTimeline from '../../components/GituralTimeline';
 import { getGituralTimeline, getStations, pickBestStationId } from '../../lib/api';
+
+const ASTANA_GRAPH_STATIONS = ['Кокшетау', 'Есиль', 'Астана', 'Екибастуз', 'Караганда'];
+const ASTANA_GRAPH_NOTE = 'Для схемы графика центральная точка «Астана» агрегирует Астана-1, Нурлы жол, Нур-Султан I и Сороковую; промежуточные малые станции скрыты только в этом окне.';
+
+function normalizeStationName(value: string | null | undefined) {
+    return String(value ?? '')
+        .toLowerCase()
+        .replaceAll('ё', 'е')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function mapGraphStation(stationName: string | null | undefined) {
+    const normalized = normalizeStationName(stationName);
+    if (!normalized) return null;
+    if (normalized.includes('кокшетау')) return 'Кокшетау';
+    if (normalized.includes('есиль')) return 'Есиль';
+    if (
+        normalized.includes('астана-1') ||
+        normalized.includes('астана 1') ||
+        normalized.includes('нурлы жол') ||
+        normalized.includes('нур-султан i') ||
+        normalized.includes('нур-султан 1') ||
+        normalized.includes('сороковая')
+    ) {
+        return 'Астана';
+    }
+    if (normalized.includes('екибастуз')) return 'Екибастуз';
+    if (normalized.includes('караганд')) return 'Караганда';
+    return null;
+}
+
+function getGraphStartOffset(stop: any) {
+    return typeof stop?.arrivalOffsetMinutes === 'number'
+        ? stop.arrivalOffsetMinutes
+        : typeof stop?.departureOffsetMinutes === 'number'
+            ? stop.departureOffsetMinutes
+            : null;
+}
+
+function getGraphEndOffset(stop: any) {
+    return typeof stop?.departureOffsetMinutes === 'number'
+        ? stop.departureOffsetMinutes
+        : typeof stop?.arrivalOffsetMinutes === 'number'
+            ? stop.arrivalOffsetMinutes
+            : null;
+}
+
+function minNumber(...values: Array<number | null>) {
+    const valid = values.filter((value): value is number => typeof value === 'number');
+    return valid.length ? Math.min(...valid) : null;
+}
+
+function maxNumber(...values: Array<number | null>) {
+    const valid = values.filter((value): value is number => typeof value === 'number');
+    return valid.length ? Math.max(...valid) : null;
+}
+
+function reduceGraphStops(windowStops: any[] = []) {
+    const reduced: any[] = [];
+
+    windowStops.forEach((stop) => {
+        const station = mapGraphStation(stop?.station);
+        const arrivalOffsetMinutes = getGraphStartOffset(stop);
+        const departureOffsetMinutes = getGraphEndOffset(stop);
+
+        if (!station || (arrivalOffsetMinutes === null && departureOffsetMinutes === null)) {
+            return;
+        }
+
+        const nextStop = {
+            ...stop,
+            station,
+            distanceKm: null,
+            arrivalRaw: stop?.arrivalRaw ?? stop?.departureRaw ?? null,
+            departureRaw: stop?.departureRaw ?? stop?.arrivalRaw ?? null,
+            arrivalOffsetMinutes,
+            departureOffsetMinutes,
+            dwellMinutes:
+                typeof stop?.dwellMinutes === 'number'
+                    ? stop.dwellMinutes
+                    : typeof arrivalOffsetMinutes === 'number' && typeof departureOffsetMinutes === 'number'
+                        ? Math.max(departureOffsetMinutes - arrivalOffsetMinutes, 0)
+                        : null,
+        };
+
+        const previous = reduced[reduced.length - 1];
+        if (!previous || previous.station !== station) {
+            reduced.push(nextStop);
+            return;
+        }
+
+        previous.arrivalOffsetMinutes = minNumber(previous.arrivalOffsetMinutes, nextStop.arrivalOffsetMinutes);
+        previous.departureOffsetMinutes = maxNumber(previous.departureOffsetMinutes, nextStop.departureOffsetMinutes);
+        previous.arrivalRaw = previous.arrivalRaw ?? nextStop.arrivalRaw;
+        previous.departureRaw = nextStop.departureRaw ?? previous.departureRaw;
+        previous.dwellMinutes =
+            typeof previous.arrivalOffsetMinutes === 'number' && typeof previous.departureOffsetMinutes === 'number'
+                ? Math.max(previous.departureOffsetMinutes - previous.arrivalOffsetMinutes, 0)
+                : previous.dwellMinutes ?? nextStop.dwellMinutes;
+    });
+
+    return reduced;
+}
+
+function reduceGraphOperations(stopOperations: any[] = []) {
+    return stopOperations
+        .map((item) => {
+            const station = mapGraphStation(item?.station);
+            if (!station) return null;
+            return { ...item, station };
+        })
+        .filter(Boolean);
+}
+
+function buildAstanaGraphTimeline(timeline: any) {
+    if (!timeline) return null;
+
+    const trains = (timeline.trains ?? [])
+        .map((train: any) => ({
+            ...train,
+            astanaCoreStop: mapGraphStation(train?.astanaCoreStop) ?? train?.astanaCoreStop ?? null,
+            windowStops: reduceGraphStops(train?.windowStops ?? []),
+        }))
+        .filter((train: any) => train.windowStops.length > 0);
+
+    return {
+        ...timeline,
+        stations: ASTANA_GRAPH_STATIONS.map((name) => ({ name, distanceKm: null })),
+        trains,
+        stopOperations: reduceGraphOperations(timeline.stopOperations ?? []),
+    };
+}
+
+function getPairBadgeClass(isSelected: boolean) {
+    return isSelected ? 'border-sky-300 bg-sky-50' : 'border-gray-100';
+}
 
 export default function GraphPage() {
     const [stationId, setStationId] = useState('');
@@ -78,18 +216,35 @@ export default function GraphPage() {
         return (timeline?.stopOperations ?? []).filter((item: any) => item.trainNumber === selectedTrainNumber);
     }, [selectedTrainNumber, timeline]);
 
+    const graphTimeline = useMemo(() => buildAstanaGraphTimeline(timeline), [timeline]);
+
+    const handleSelectLocomotiveRow = useCallback((row: any) => {
+        if (row?.pairKey) {
+            setSelectedPair(row.pairKey);
+        }
+
+        if (row?.departureTrainNumber) {
+            setSelectedTrainNumber(row.departureTrainNumber);
+            return;
+        }
+
+        if (row?.arrivalTrainNumber) {
+            setSelectedTrainNumber(row.arrivalTrainNumber);
+        }
+    }, []);
+
     return (
         <div className="flex min-h-screen">
             <Sidebar stationId={stationId} />
             <div className="main-wrapper flex-1">
                 <header className="topbar">
                     <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-slate-900 to-sky-700 flex items-center justify-center">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-slate-900 to-sky-700">
                             <Route size={18} className="text-white" />
                         </div>
                         <div>
-                            <h1 className="text-lg font-bold text-gray-900">График Узла Астана</h1>
-                            <p className="text-xs text-gray-400">Аналог графика Гитурал: ось времени 20:00-20:00, станции по вертикали, поезд как нитка</p>
+                            <h1 className="text-lg font-bold text-gray-900">График узла Астана</h1>
+                            <p className="text-xs text-gray-400">Аналог графика Гитурал: ось времени 20:00–20:00, станции по вертикали, поезд как нитка.</p>
                         </div>
                     </div>
                     <button onClick={() => load()} className="btn-secondary" disabled={loading}>
@@ -98,10 +253,10 @@ export default function GraphPage() {
                 </header>
 
                 <main className="page-content">
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mb-6">
+                    <div className="mb-6 grid grid-cols-1 gap-3 lg:grid-cols-4">
                         {stats.map((item) => (
                             <div key={item.label} className={`rounded-3xl border border-gray-100 p-4 ${item.cls}`}>
-                                <div className="flex items-center gap-2 mb-2">
+                                <div className="mb-2 flex items-center gap-2">
                                     <item.icon size={16} />
                                     <span className="text-xs font-medium">{item.label}</span>
                                 </div>
@@ -110,19 +265,19 @@ export default function GraphPage() {
                         ))}
                     </div>
 
-                    <div className="card mb-6 flex flex-col xl:flex-row gap-3 xl:items-center">
+                    <div className="card mb-6 flex flex-col gap-3 xl:flex-row xl:items-center">
                         <div className="relative w-full xl:max-w-sm">
                             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                             <input
                                 value={trainNumber}
-                                onChange={(e) => setTrainNumber(e.target.value)}
+                                onChange={(event) => setTrainNumber(event.target.value)}
                                 placeholder="Фильтр по номеру поезда"
                                 className="input-field pl-9"
                             />
                         </div>
                         <select
                             value={corridor}
-                            onChange={(e) => setCorridor(e.target.value)}
+                            onChange={(event) => setCorridor(event.target.value)}
                             className="input-field xl:max-w-md"
                         >
                             <option value="">Все коридоры</option>
@@ -132,7 +287,7 @@ export default function GraphPage() {
                         </select>
                         <select
                             value={day}
-                            onChange={(e) => setDay(e.target.value ? Number(e.target.value) : '')}
+                            onChange={(event) => setDay(event.target.value ? Number(event.target.value) : '')}
                             className="input-field xl:max-w-[180px]"
                         >
                             <option value="">Все графические сутки</option>
@@ -146,11 +301,13 @@ export default function GraphPage() {
                     </div>
 
                     <div className="mb-4 rounded-3xl border border-sky-100 bg-sky-50 p-4 text-sm text-sky-900">
-                        На втором фото у тебя именно узловой график-нитка: станции по вертикали, время по горизонтали, горизонтальный сегмент показывает стоянку, а обороты и смены локомотива читаются прямо по графику. Это можно и нужно держать в платформе как отдельный экран, связанный с подвязками и вызовом бригад.
+                        На этом экране мы держим узловой график как отдельный диспетчерский инструмент: станции по вертикали, время по горизонтали,
+                        стоянки видны горизонтальными сегментами, а обороты и смены локомотива читаются прямо по ниткам. Ниже график связан с живой таблицей
+                        по локомотивным состояниям: клик по строке выделяет нитку, клик по нитке подсвечивает строку.
                     </div>
 
                     <div className="card mb-6">
-                        <div className="flex items-center gap-2 mb-4">
+                        <div className="mb-4 flex items-center gap-2">
                             <CalendarDays size={16} className="text-slate-700" />
                             <h2 className="font-semibold text-gray-900">Маршрутные пары</h2>
                         </div>
@@ -178,23 +335,26 @@ export default function GraphPage() {
                     </div>
 
                     <GituralTimeline
-                        trains={timeline?.trains ?? []}
-                        stations={timeline?.stations ?? []}
-                        bindings={timeline?.bindings ?? []}
-                        turnarounds={timeline?.turnarounds ?? []}
+                        trains={graphTimeline?.trains ?? []}
+                        stations={graphTimeline?.stations ?? ASTANA_GRAPH_STATIONS.map((name) => ({ name, distanceKm: null }))}
+                        bindings={graphTimeline?.bindings ?? []}
+                        turnarounds={graphTimeline?.turnarounds ?? []}
                         highlightedPair={selectedPair || undefined}
-                        stopOperations={timeline?.stopOperations ?? []}
+                        stopOperations={graphTimeline?.stopOperations ?? []}
                         selectedTrainNumber={selectedTrainNumber || undefined}
                         onSelectTrain={setSelectedTrainNumber}
+                        sourceTrainsCount={timeline?.trains?.length ?? 0}
+                        aggregationNote={ASTANA_GRAPH_NOTE}
+                        serviceDayStart={timeline?.serviceDayStart ?? '20:00'}
                     />
 
-                    <div className="grid grid-cols-1 xl:grid-cols-4 gap-4 mt-6">
+                    <div className="mt-6 grid grid-cols-1 gap-4 xl:grid-cols-4">
                         <div className="card">
-                            <div className="flex items-center gap-2 mb-4">
+                            <div className="mb-4 flex items-center gap-2">
                                 <Route size={16} className="text-sky-700" />
                                 <h2 className="font-semibold text-gray-900">Пары и нитки</h2>
                             </div>
-                            <div className="space-y-3 max-h-[320px] overflow-auto">
+                            <div className="max-h-[320px] space-y-3 overflow-auto">
                                 {(timeline?.routePairs ?? []).map((pair: any) => (
                                     <button
                                         key={pair.pairKey}
@@ -203,10 +363,10 @@ export default function GraphPage() {
                                             setSelectedPair(nextPair);
                                             setSelectedTrainNumber('');
                                         }}
-                                        className={`w-full rounded-2xl border p-3 text-left ${selectedPair === pair.pairKey ? 'border-sky-300 bg-sky-50' : 'border-gray-100'}`}
+                                        className={`w-full rounded-2xl border p-3 text-left ${getPairBadgeClass(selectedPair === pair.pairKey)}`}
                                     >
                                         <div className="text-sm font-semibold text-gray-900">{pair.pairKey}</div>
-                                        <div className="text-xs text-gray-500 mt-1">
+                                        <div className="mt-1 text-xs text-gray-500">
                                             Ниток: {pair.trainsCount} · Поезда: {(pair.trainNumbers ?? []).join(', ')}
                                         </div>
                                         {!!pair.routes?.length && (
@@ -218,7 +378,7 @@ export default function GraphPage() {
                         </div>
 
                         <div className="card">
-                            <div className="flex items-center gap-2 mb-4">
+                            <div className="mb-4 flex items-center gap-2">
                                 <Search size={16} className="text-indigo-700" />
                                 <h2 className="font-semibold text-gray-900">Карточка поезда</h2>
                             </div>
@@ -226,17 +386,17 @@ export default function GraphPage() {
                                 <div className="space-y-4">
                                     <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
                                         <div className="text-lg font-bold text-gray-900">{selectedTrain.trainNumber}</div>
-                                        <div className="text-xs text-gray-600 mt-1">{selectedTrain.routeName ?? 'Маршрут не указан'}</div>
-                                        <div className="mt-2 flex gap-2 flex-wrap">
+                                        <div className="mt-1 text-xs text-gray-600">{selectedTrain.routeName ?? 'Маршрут не указан'}</div>
+                                        <div className="mt-2 flex flex-wrap gap-2">
                                             {selectedTrain.corridor && <span className="badge-blue">{selectedTrain.corridor}</span>}
                                             {selectedTrain.astanaCoreStop && <span className="badge-green">{selectedTrain.astanaCoreStop}</span>}
                                             <span className="badge-gray">{selectedTrain.direction === 'forward' ? 'Туда' : 'Обратно'}</span>
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2 max-h-[320px] overflow-auto">
+                                    <div className="max-h-[320px] space-y-2 overflow-auto">
                                         {selectedTrain.windowStops.map((stop: any, index: number) => {
-                                            const ops = selectedTrainOperations.filter((item: any) => item.station === stop.station);
+                                            const operations = selectedTrainOperations.filter((item: any) => item.station === stop.station);
                                             const hasLongStop = (stop.dwellMinutes ?? 0) >= 30;
                                             return (
                                                 <div key={`${selectedTrain.trainNumber}-${stop.station}-${index}`} className="rounded-2xl border border-gray-100 p-3">
@@ -246,15 +406,15 @@ export default function GraphPage() {
                                                             {stop.arrivalRaw ?? '—'} → {stop.departureRaw ?? '—'}
                                                         </div>
                                                     </div>
-                                                    <div className="mt-2 flex gap-2 flex-wrap">
+                                                    <div className="mt-2 flex flex-wrap gap-2">
                                                         {typeof stop.dwellMinutes === 'number' && (
                                                             <span className={hasLongStop ? 'badge-yellow' : 'badge-gray'}>
                                                                 Стоянка {stop.dwellMinutes}м
                                                             </span>
                                                         )}
-                                                        {ops.map((op: any, opIndex: number) => (
-                                                            <span key={opIndex} className={op.type === 'LOCO_CHANGE' ? 'badge-yellow' : 'badge-green'}>
-                                                                {op.label}
+                                                        {operations.map((operation: any, operationIndex: number) => (
+                                                            <span key={operationIndex} className={operation.type === 'LOCO_CHANGE' ? 'badge-yellow' : 'badge-green'}>
+                                                                {operation.label}
                                                             </span>
                                                         ))}
                                                     </div>
@@ -271,11 +431,11 @@ export default function GraphPage() {
                         </div>
 
                         <div className="card">
-                            <div className="flex items-center gap-2 mb-4">
+                            <div className="mb-4 flex items-center gap-2">
                                 <Clock3 size={16} className="text-violet-700" />
                                 <h2 className="font-semibold text-gray-900">Операции на стоянках</h2>
                             </div>
-                            <div className="space-y-3 max-h-[320px] overflow-auto">
+                            <div className="max-h-[320px] space-y-3 overflow-auto">
                                 {(timeline?.stopOperations ?? [])
                                     .filter((item: any) => {
                                         if (!selectedPair) return true;
@@ -290,7 +450,7 @@ export default function GraphPage() {
                                                     {item.label}
                                                 </span>
                                             </div>
-                                            <div className="text-xs text-gray-500 mt-1">
+                                            <div className="mt-1 text-xs text-gray-500">
                                                 {item.stationTime ?? '—'} · {item.details}
                                             </div>
                                         </div>
@@ -302,66 +462,40 @@ export default function GraphPage() {
                         </div>
 
                         <div className="card">
-                            <div className="flex items-center gap-2 mb-4">
+                            <div className="mb-4 flex items-center gap-2">
                                 <GitBranch size={16} className="text-teal-700" />
                                 <h2 className="font-semibold text-gray-900">Обороты по узлу</h2>
                             </div>
-                            <div className="space-y-3 max-h-[320px] overflow-auto">
+                            <div className="max-h-[320px] space-y-3 overflow-auto">
                                 {(timeline?.turnarounds ?? [])
                                     .filter((item: any) => !selectedPair || `${String(item.arrivalTrainNumber ?? '').padStart(3, '0')}/${String(item.departureTrainNumber ?? '').padStart(3, '0')}` === selectedPair)
                                     .slice(0, 20)
                                     .map((item: any, index: number) => (
-                                    <div key={`${item.stationSheet}-${index}`} className="rounded-2xl border border-gray-100 p-3">
-                                        <div className="text-sm font-semibold text-gray-900">
-                                            {item.arrivalTrainNumber ?? '—'} → {item.departureTrainNumber ?? '—'}
+                                        <div key={`${item.stationSheet}-${index}`} className="rounded-2xl border border-gray-100 p-3">
+                                            <div className="text-sm font-semibold text-gray-900">
+                                                {item.arrivalTrainNumber ?? '—'} → {item.departureTrainNumber ?? '—'}
+                                            </div>
+                                            <div className="mt-1 text-xs text-gray-500">
+                                                {item.stationSheet} · {item.arrivalAstanaStop ?? '—'} {item.arrivalAstanaTime ?? '—'} → {item.departureAstanaStop ?? '—'} {item.departureAstanaTime ?? '—'}
+                                            </div>
+                                            <div className="mt-2 badge-green">
+                                                <Clock3 size={10} /> {item.dwellHours ? `${item.dwellHours}ч` : 'время не рассчитано'}
+                                            </div>
                                         </div>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            {item.stationSheet} · {item.arrivalAstanaStop ?? '—'} {item.arrivalAstanaTime ?? '—'} → {item.departureAstanaStop ?? '—'} {item.departureAstanaTime ?? '—'}
-                                        </div>
-                                        <div className="mt-2 badge-green">
-                                            <Clock3 size={10} /> {item.dwellHours ? `${item.dwellHours}ч` : 'время не рассчитано'}
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))}
                                 {!(timeline?.turnarounds ?? []).length && (
                                     <div className="text-sm text-gray-500">Для текущего фильтра обороты не найдены.</div>
                                 )}
                             </div>
                         </div>
-
-                        <div className="card">
-                            <div className="flex items-center gap-2 mb-4">
-                                <BarChart3 size={16} className="text-amber-700" />
-                                <h2 className="font-semibold text-gray-900">Подвязки локомотивов</h2>
-                            </div>
-                            <div className="space-y-3 max-h-[320px] overflow-auto">
-                                {(timeline?.bindings ?? [])
-                                    .filter((item: any) => {
-                                        if (!selectedPair) return true;
-                                        const arrival = item.arrivalTrainNumber ? String(item.arrivalTrainNumber).padStart(3, '0') : '';
-                                        const departure = item.departureTrainNumber ? String(item.departureTrainNumber).padStart(3, '0') : '';
-                                        return selectedPair.includes(arrival) || selectedPair.includes(departure);
-                                    })
-                                    .slice(0, 24)
-                                    .map((item: any, index: number) => (
-                                    <div key={`${item.sheetName}-${index}`} className="rounded-2xl border border-gray-100 p-3">
-                                        <div className="text-sm font-semibold text-gray-900">{item.sheetName}</div>
-                                        <div className="text-xs text-gray-500 mt-1">
-                                            {item.arrivalTrainNumber ?? '—'} {item.arrivalTime ?? '—'} → {item.departureTrainNumber ?? '—'} {item.departureTime ?? '—'}
-                                        </div>
-                                        <div className="mt-2 flex gap-2 flex-wrap">
-                                            {item.depot && <span className="badge-gray">{item.depot}</span>}
-                                            {item.dwellMinutes !== null && <span className="badge-yellow">{item.dwellMinutes}м</span>}
-                                            {item.weekday && <span className="badge-blue">{item.weekday}</span>}
-                                        </div>
-                                    </div>
-                                ))}
-                                {!(timeline?.bindings ?? []).length && (
-                                    <div className="text-sm text-gray-500">Для текущего фильтра подвязки не найдены.</div>
-                                )}
-                            </div>
-                        </div>
                     </div>
+
+                    <GituralLocomotiveTable
+                        rows={timeline?.locomotiveTable ?? []}
+                        selectedPair={selectedPair || undefined}
+                        selectedTrainNumber={selectedTrainNumber || undefined}
+                        onSelectRow={handleSelectLocomotiveRow}
+                    />
                 </main>
             </div>
         </div>
