@@ -208,6 +208,22 @@ export type EventType =
     | 'MAINTENANCE_STARTED'
     | 'MAINTENANCE_ENDED';
 
+export type OperationalEvent = {
+    id: string;
+    stationId: string;
+    type: EventType | string;
+    payload: Record<string, unknown> | null;
+    createdAt: string;
+    updatedAt?: string;
+};
+
+export type EventsResponse = {
+    events: OperationalEvent[];
+    total: number;
+    page: number;
+    limit?: number;
+};
+
 export async function createEvent(data: {
     stationId: string;
     type: EventType;
@@ -217,7 +233,7 @@ export async function createEvent(data: {
 }
 
 export async function getEvents(stationId: string, page = 1) {
-    return fetchApi(`/events?stationId=${stationId}&page=${page}`);
+    return fetchApi<EventsResponse>(`/events?stationId=${stationId}&page=${page}`);
 }
 
 // ─── Scheduling ──────────────────────────────────────────────────────

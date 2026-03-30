@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import {
@@ -144,7 +144,7 @@ function downloadCsv(filename: string, rows: Array<Record<string, string | numbe
   URL.revokeObjectURL(href);
 }
 
-export default function DashboardPage() {
+function DashboardPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const stationParam = searchParams.get('stationId') ?? '';
@@ -259,7 +259,9 @@ export default function DashboardPage() {
   }, [loadSnapshot, snapshotAtParam, stationId, view]);
 
   const selectedStation = stations.find((station) => station.id === stationId) ?? null;
-  const totalConflicts = Object.values(analytics?.conflictsCountByType ?? {}).reduce((sum, value) => sum + Number(value || 0), 0);
+  const totalConflicts = Object
+    .values((analytics?.conflictsCountByType ?? {}) as Record<string, number | string | null | undefined>)
+    .reduce<number>((sum, value) => sum + Number(value ?? 0), 0);
 
   const boardColumns = useMemo(() => {
     const items: any[] = overview?.trainRuns ?? [];
@@ -465,5 +467,13 @@ export default function DashboardPage() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
+      <DashboardPageContent />
+    </Suspense>
   );
 }

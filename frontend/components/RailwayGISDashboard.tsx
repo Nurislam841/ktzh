@@ -328,82 +328,93 @@ export default function RailwayGISDashboard({
             ref={containerRef}
             className={`relative flex h-full flex-col overflow-hidden bg-white ${isFullscreen ? 'h-screen rounded-none border-0' : 'min-h-[760px] rounded-[28px] border border-slate-200'}`}
         >
-            <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 bg-slate-950 px-5 py-3 text-white">
-                <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                    <input type="checkbox" checked={showRailNetwork} onChange={(event) => setShowRailNetwork(event.target.checked)} />
-                    Реальная ж/д сеть
-                </label>
-                <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                    <input type="checkbox" checked={showSchematic} onChange={(event) => setShowSchematic(event.target.checked)} />
-                    Схема РЦУП
-                </label>
-                <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                    <input type="checkbox" checked={showShoulders} onChange={(event) => setShowShoulders(event.target.checked)} />
-                    Плечи
-                </label>
-                <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                    <input type="checkbox" checked={showDepartments} onChange={(event) => setShowDepartments(event.target.checked)} />
-                    Отделения
-                </label>
-                <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                    <input type="checkbox" checked={showNodes} onChange={(event) => setShowNodes(event.target.checked)} />
-                    Узлы
-                </label>
-                <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                    <input type="checkbox" checked={showStations} onChange={(event) => setShowStations(event.target.checked)} />
-                    Станции
-                </label>
-                <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
-                    <input type="checkbox" checked={showEvents} onChange={(event) => setShowEvents(event.target.checked)} />
-                    События
-                </label>
-
-                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1">
-                    <button
-                        type="button"
-                        onClick={() => setViewMode('astana')}
-                        className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${viewMode === 'astana' ? 'bg-white text-slate-950' : 'text-slate-200 hover:bg-white/10'}`}
-                    >
-                        Узел Астана
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setViewMode('country')}
-                        className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${viewMode === 'country' ? 'bg-white text-slate-950' : 'text-slate-200 hover:bg-white/10'}`}
-                    >
-                        Весь Казахстан
-                    </button>
+            <div className="flex flex-col gap-3 border-b border-slate-200 bg-[linear-gradient(135deg,#020617_0%,#0f172a_58%,#1e293b_100%)] px-5 py-4 text-white">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Карта сети и узла</div>
+                        <div className="mt-1 text-sm text-slate-300">Выбирай слой, масштаб и объект. Карта и таблица синхронизированы.</div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5">
+                            <MapPinned size={12} />
+                            {atlas.stations.length} точек
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5">
+                            <Radar size={12} />
+                            {atlas.events.length} событий
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5">
+                            <GitBranch size={12} />
+                            {atlas.shoulders.length} плеч
+                        </span>
+                    </div>
                 </div>
 
-                <button
-                    type="button"
-                    onClick={() => void toggleFullscreen()}
-                    className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
-                >
-                    {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                    {isFullscreen ? 'Свернуть' : 'Полный экран'}
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="mr-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Слои</div>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={showRailNetwork} onChange={(event) => setShowRailNetwork(event.target.checked)} />
+                    Реальная ж/д сеть
+                    </label>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={showSchematic} onChange={(event) => setShowSchematic(event.target.checked)} />
+                    Схема РЦУП
+                    </label>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={showShoulders} onChange={(event) => setShowShoulders(event.target.checked)} />
+                    Плечи
+                    </label>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={showDepartments} onChange={(event) => setShowDepartments(event.target.checked)} />
+                    Отделения
+                    </label>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={showNodes} onChange={(event) => setShowNodes(event.target.checked)} />
+                    Узлы
+                    </label>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={showStations} onChange={(event) => setShowStations(event.target.checked)} />
+                    Станции
+                    </label>
+                    <label className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm">
+                    <input type="checkbox" checked={showEvents} onChange={(event) => setShowEvents(event.target.checked)} />
+                    События
+                    </label>
 
-                <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5">
-                        <MapPinned size={12} />
-                        {atlas.stations.length} точек
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5">
-                        <Radar size={12} />
-                        {atlas.events.length} событий
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-3 py-1.5">
-                        <GitBranch size={12} />
-                        {atlas.shoulders.length} плеч
-                    </span>
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 p-1">
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('astana')}
+                                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${viewMode === 'astana' ? 'bg-white text-slate-950' : 'text-slate-200 hover:bg-white/10'}`}
+                            >
+                                Узел Астана
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setViewMode('country')}
+                                className={`rounded-full px-3 py-1.5 text-sm font-semibold transition ${viewMode === 'country' ? 'bg-white text-slate-950' : 'text-slate-200 hover:bg-white/10'}`}
+                            >
+                                Весь Казахстан
+                            </button>
+                        </div>
+
+                        <button
+                            type="button"
+                            onClick={() => void toggleFullscreen()}
+                            className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+                        >
+                            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                            {isFullscreen ? 'Свернуть' : 'Полный экран'}
+                        </button>
+                    </div>
                 </div>
             </div>
 
             <div className="relative flex-1">
-                <div className="absolute left-4 top-4 z-[500] max-w-[300px] rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Легенда</div>
-                    <div className="mt-3 space-y-2 text-sm text-slate-700">
+                <div className="absolute left-4 bottom-4 z-[500] max-w-[280px] rounded-3xl border border-slate-200 bg-white/92 p-4 shadow-xl backdrop-blur">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Сигналы карты</div>
+                    <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-slate-700">
                         {Object.values(STATUS_META).map((item) => (
                             <div key={item.label} className="flex items-center gap-2">
                                 <span className="h-3.5 w-3.5 rounded-full border border-white shadow-sm" style={{ backgroundColor: item.color }} />
@@ -429,10 +440,10 @@ export default function RailwayGISDashboard({
                     </div>
                 </div>
 
-                <div className="absolute right-4 top-4 z-[500] max-w-[360px] rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl backdrop-blur">
+                <div className="absolute right-4 bottom-4 z-[500] max-w-[320px] rounded-3xl border border-slate-200 bg-white/92 p-4 shadow-xl backdrop-blur">
                     <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
                         <Train size={13} />
-                        Контроль сети
+                        Контекст слоя
                     </div>
                     <div className="mt-2 text-sm leading-6 text-slate-600">
                         {atlas.schematicOverlay.note}
