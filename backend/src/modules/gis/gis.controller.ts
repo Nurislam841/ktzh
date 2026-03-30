@@ -14,4 +14,9 @@ export class GisController {
     async getRouteLines() {
         return this.gisService.getRouteLines();
     }
+
+    @Get('atlas')
+    async getAtlas() {
+        return this.gisService.getAtlas();
+    }
 }

@@ -80,6 +80,12 @@ export async function getNodeDecisionQueue(stationId: string, hours?: number) {
     return fetchApi(`/node/decision-queue?${params.toString()}`);
 }
 
+export async function getNodeSnapshot(stationId: string, at?: string) {
+    const params = new URLSearchParams({ stationId });
+    if (at) params.set('at', at);
+    return fetchApi<any>(`/node/snapshot?${params.toString()}`);
+}
+
 export async function getCrewCalls(stationId: string, hours?: number) {
     const params = new URLSearchParams({ stationId });
     if (hours) params.set('hours', String(hours));
@@ -93,6 +99,10 @@ export async function getGituralTimeline(filters?: { corridor?: string; trainNum
     if (typeof filters?.day === 'number') params.set('day', String(filters.day));
     const query = params.toString();
     return fetchApi(`/gitural/timeline${query ? `?${query}` : ''}`);
+}
+
+export async function getGisAtlas() {
+    return fetchApi<any>('/gis/atlas');
 }
 
 export async function updateCrewCallStatus(
@@ -243,9 +253,35 @@ export async function getAssistantInsights(stationId: string) {
     return fetchApi(`/analytics/assistant?${params.toString()}`);
 }
 
+export type DashboardNotificationItem = {
+    id: string;
+    level: 'info' | 'warning' | 'critical';
+    title: string;
+    message: string;
+    createdAt: string;
+    source: string;
+};
+
+export type DashboardNotifications = {
+    stationId: string;
+    generatedAt: string;
+    unreadCount: number;
+    summary: {
+        pendingApprovals: number;
+        totalConflicts: number;
+        recentEventsCount: number;
+        criticalCount: number;
+        warningCount: number;
+        infoCount: number;
+        latestVersionId: string | null;
+        latestEventAt: string | null;
+    };
+    items: DashboardNotificationItem[];
+};
+
 export async function getDashboardNotifications(stationId: string) {
     const params = new URLSearchParams({ stationId });
-    return fetchApi(`/analytics/notifications?${params.toString()}`);
+    return fetchApi<DashboardNotifications>(`/analytics/notifications?${params.toString()}`);
 }
 
 // ─── Optimizer ───────────────────────────────────────────────────────
@@ -278,6 +314,91 @@ export async function getBindings(filters?: {
     return fetchApi<{ items: any[]; total: number }>(`/api/v1/bindings?${params.toString()}`);
 }
 
+export type BindingRecommendationCandidate = {
+    trainNumber: string;
+    routeName: string | null;
+    corridor: string | null;
+    departureLabel: string | null;
+    departureTime: string | null;
+    departureDay: number | null;
+    departureSort: number | null;
+    waitMinutes: number | null;
+    projectedDwellMinutes: number | null;
+    projectedOverDwellMinutes: number | null;
+    shoulderKey: string | null;
+    shoulderLabel: string | null;
+    score: number;
+    status: 'recommended' | 'acceptable' | 'undesirable' | 'forbidden';
+    statusLabel: string;
+    tractionCompatible: boolean;
+    shoulderFit: 'ideal' | 'good' | 'weak' | 'bad';
+    reasons: string[];
+};
+
+export type BindingIntelligenceRow = {
+    id: string;
+    stationName: string;
+    pairKey: string;
+    day: number;
+    weekday: string | null;
+    locomotiveNumber: string | null;
+    locomotiveSeries: string | null;
+    locomotiveDepot: string | null;
+    tractionType: 'electric' | 'diesel' | 'unknown';
+    shoulder: string | null;
+    shoulderKey: string | null;
+    actualShoulders: string[];
+    arrival: string | null;
+    arrivalDay: number | null;
+    arrivalTime: string | null;
+    arrivalSort: number | null;
+    arrivalTrainNumber: string | null;
+    currentIdleMinutes: number | null;
+    dwellMinutes: number | null;
+    normMinutes: number | null;
+    overDwellMinutes: number | null;
+    overDwellNowMinutes: number | null;
+    waitToBestMinutes: number | null;
+    canWaitMinutes: number | null;
+    riskOfLeavingShoulder: 'low' | 'medium' | 'high';
+    recommendationBias: 'wait_for_fit' | 'dispatch_now' | 'manual_review';
+    recommendationBiasLabel: string;
+    currentDepartureTrainNumber: string | null;
+    currentDeparture: string | null;
+    bestCandidate: BindingRecommendationCandidate | null;
+    alternatives: BindingRecommendationCandidate[];
+    plannedCandidate: BindingRecommendationCandidate | null;
+    planAlignment: 'aligned' | 'acceptable' | 'risk' | 'missing';
+    planAlignmentLabel: string;
+    recommendationSummary: string;
+    issues: string[];
+    qualityFlags: string[];
+    status: 'ok' | 'warning' | 'critical' | 'missing';
+    statusLabel: string;
+};
+
+export type BindingIntelligencePayload = {
+    generatedAt: string;
+    selectedDay: number | null;
+    serviceDayStart: string;
+    cursorLabel: string;
+    days: number[];
+    stats: {
+        totalLocomotives: number;
+        withRecommendation: number;
+        critical: number;
+        waitingForFit: number;
+        outOfNorm: number;
+    };
+    rows: BindingIntelligenceRow[];
+};
+
+export async function getBindingIntelligence(day?: number) {
+    const params = new URLSearchParams();
+    if (typeof day === 'number') params.set('day', String(day));
+    return fetchApi<BindingIntelligencePayload>(`/api/v1/bindings/intelligence${params.toString() ? `?${params.toString()}` : ''}`);
+}
+
 export async function getBindingDetail(bindingId: string) {
     return fetchApi(`/api/v1/bindings/${bindingId}`);
 }
@@ -285,11 +406,17 @@ export async function getBindingDetail(bindingId: string) {
 export async function createBinding(data: {
     periodId: string;
     turnaroundStationId: string;
-    arrivalTrainId: string;
+    arrivalTrainId?: string;
+    arrivalTrainNumber?: string;
     arrivalDt: string;
-    departureTrainId: string;
+    departureTrainId?: string;
+    departureTrainNumber?: string;
     departureDt: string;
     dwellMinutes?: number;
+    locomotiveNumber?: string;
+    locomotiveSeries?: string;
+    locomotiveDepot?: string;
+    tractionType?: string;
 }) {
     return fetchApi('/api/v1/bindings', {
         method: 'POST',

@@ -1,102 +1,120 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
+import CreateBindingModal from '../../components/CreateBindingModal';
+import BindingDwellBoard from '../../components/BindingDwellBoard';
+import BindingRecommendationsTable from '../../components/BindingRecommendationsTable';
 import {
-    getBindings,
-    runBindingConflictCheck,
-    getConflictsSummary,
     calculateBindingKpi,
+    getBindingIntelligence,
+    getBindings,
+    getConflictsSummary,
     getStations,
     pickBestStationId,
+    runBindingConflictCheck,
+    type BindingIntelligencePayload,
+    type BindingIntelligenceRow,
 } from '../../lib/api';
 import {
-    Link2, AlertTriangle, Clock, RefreshCw,
-    CheckCircle, XCircle, FileWarning, Search,
-    BarChart3, Play, ArrowUpDown, Plus,
+    AlertTriangle,
+    BarChart3,
+    CalendarDays,
+    CheckCircle2,
+    Clock3,
+    Gauge,
+    Link2,
+    PauseCircle,
+    Plus,
+    RefreshCw,
+    Search,
+    ShieldAlert,
+    Sparkles,
 } from 'lucide-react';
-import CreateBindingModal from '../../components/CreateBindingModal';
 
 const STATUS_MAP: Record<string, { label: string; cls: string }> = {
-    DRAFT: { label: 'Черновик', cls: 'bg-gray-100 text-gray-600' },
-    VALIDATED: { label: 'Проверена', cls: 'bg-blue-100 text-blue-700' },
-    PLANNED: { label: 'Спланирована', cls: 'bg-green-100 text-green-700' },
-    CONFLICT: { label: 'Конфликт', cls: 'bg-red-100 text-red-600' },
-    REJECTED: { label: 'Отклонена', cls: 'bg-orange-100 text-orange-700' },
-    APPROVED: { label: 'Утверждена', cls: 'bg-emerald-100 text-emerald-700' },
+    DRAFT: { label: 'Черновик', cls: 'bg-slate-100 text-slate-600' },
+    VALIDATED: { label: 'Проверена', cls: 'bg-sky-100 text-sky-700' },
+    PLANNED: { label: 'Спланирована', cls: 'bg-emerald-100 text-emerald-700' },
+    CONFLICT: { label: 'Конфликт', cls: 'bg-rose-100 text-rose-700' },
+    REJECTED: { label: 'Отклонена', cls: 'bg-amber-100 text-amber-700' },
+    APPROVED: { label: 'Утверждена', cls: 'bg-teal-100 text-teal-700' },
 };
 
-const CONFLICT_CODE_MAP: Record<string, string> = {
-    FORMAT_ERROR: 'Ошибка формата',
-    VALIDATION_ERROR: 'Ошибка валидации',
-    REF_NOT_FOUND: 'Справочник не найден',
-    SHOULDER_NOT_RESOLVED: 'Плечо не определено',
-    MODEL_NOT_ALLOWED: 'Модель не допущена',
-    TIME_CONFLICT: 'Пересечение по времени',
-    MAINTENANCE_VIOLATION: 'Нарушение ТО',
-    SYSTEM_ERROR: 'Системная ошибка',
-};
+function formatMinutes(value: number | null | undefined) {
+    if (typeof value !== 'number') return '—';
+    const hours = Math.floor(value / 60);
+    const minutes = value % 60;
+    if (!hours) return `${minutes}м`;
+    return `${hours}ч ${String(minutes).padStart(2, '0')}м`;
+}
 
 function formatDt(iso: string) {
     return new Date(iso).toLocaleString('ru-RU', {
-        day: '2-digit', month: '2-digit',
-        hour: '2-digit', minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
     });
 }
 
-function formatDwell(min: number) {
-    const h = Math.floor(min / 60);
-    const m = min % 60;
-    return h > 0 ? `${h}ч ${m}м` : `${m}м`;
-}
-
 export default function BindingsPage() {
-    const router = useRouter();
     const [stationId, setStationId] = useState('');
-    const [bindings, setBindings] = useState<any[]>([]);
-    const [total, setTotal] = useState(0);
-    const [loading, setLoading] = useState(false);
     const [periodId, setPeriodId] = useState('2026-03');
-    const [statusFilter, setStatusFilter] = useState('');
+    const [bindings, setBindings] = useState<any[]>([]);
+    const [bindingsTotal, setBindingsTotal] = useState(0);
+    const [bindingsLoading, setBindingsLoading] = useState(false);
+    const [intelligence, setIntelligence] = useState<BindingIntelligencePayload | null>(null);
+    const [intelligenceLoading, setIntelligenceLoading] = useState(false);
+    const [selectedDay, setSelectedDay] = useState<number | ''>('');
+    const [selectedRow, setSelectedRow] = useState<BindingIntelligenceRow | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
-
+    const [shoulderFilter, setShoulderFilter] = useState('');
+    const [tractionFilter, setTractionFilter] = useState('');
+    const [qualityFilter, setQualityFilter] = useState('');
+    const [onlyProblematic, setOnlyProblematic] = useState(false);
     const [isCreateOpen, setIsCreateOpen] = useState(false);
-
-    // Conflict check
+    const [createRow, setCreateRow] = useState<BindingIntelligenceRow | null>(null);
     const [checking, setChecking] = useState(false);
     const [checkResult, setCheckResult] = useState<any>(null);
-
-    // KPI
     const [kpiLoading, setKpiLoading] = useState(false);
     const [kpi, setKpi] = useState<any>(null);
-
-    // Conflict summary
     const [conflictSummary, setConflictSummary] = useState<any>(null);
 
     const loadBindings = useCallback(async () => {
-        setLoading(true);
+        setBindingsLoading(true);
         try {
-            const data = await getBindings({
-                periodId: periodId || undefined,
-                status: statusFilter || undefined,
-                take: 100,
-            });
+            const data = await getBindings({ periodId, take: 100 });
             setBindings(data.items);
-            setTotal(data.total);
-        } catch (err) {
-            console.error('Load bindings error:', err);
+            setBindingsTotal(data.total);
         } finally {
-            setLoading(false);
+            setBindingsLoading(false);
         }
-    }, [periodId, statusFilter]);
+    }, [periodId]);
+
+    const loadIntelligence = useCallback(async (day?: number) => {
+        setIntelligenceLoading(true);
+        try {
+            const data = await getBindingIntelligence(day);
+            setIntelligence(data);
+            if (typeof day === 'number') {
+                setSelectedDay(day);
+            } else {
+                setSelectedDay(data.selectedDay ?? '');
+            }
+        } finally {
+            setIntelligenceLoading(false);
+        }
+    }, []);
 
     const loadSummary = useCallback(async () => {
         if (!periodId) return;
         try {
             const summary = await getConflictsSummary(periodId);
             setConflictSummary(summary);
-        } catch { }
+        } catch {
+            setConflictSummary(null);
+        }
     }, [periodId]);
 
     useEffect(() => {
@@ -111,20 +129,19 @@ export default function BindingsPage() {
                     try {
                         const stations = await getStations();
                         sid = pickBestStationId(stations.stations);
-                    } catch { }
+                    } catch {
+                        sid = '';
+                    }
                 }
             }
+
             if (!mounted) return;
             setStationId(sid);
             if (sid) window.localStorage.setItem('ktz_station_id', sid);
+            await Promise.all([loadBindings(), loadIntelligence(), loadSummary()]);
         })();
         return () => { mounted = false; };
-    }, []);
-
-    useEffect(() => {
-        loadBindings();
-        loadSummary();
-    }, [loadBindings, loadSummary]);
+    }, [loadBindings, loadIntelligence, loadSummary]);
 
     const handleConflictCheck = async () => {
         if (!periodId) return;
@@ -132,10 +149,9 @@ export default function BindingsPage() {
         try {
             const result = await runBindingConflictCheck(periodId);
             setCheckResult(result);
-            await loadBindings();
-            await loadSummary();
-        } catch (err: any) {
-            setCheckResult({ error: err.message });
+            await Promise.all([loadBindings(), loadSummary()]);
+        } catch (reason: any) {
+            setCheckResult({ error: reason.message });
         } finally {
             setChecking(false);
         }
@@ -147,262 +163,309 @@ export default function BindingsPage() {
         try {
             const result = await calculateBindingKpi(periodId);
             setKpi(result);
-        } catch (err: any) {
-            setKpi({ error: err.message });
+        } catch (reason: any) {
+            setKpi({ error: reason.message });
         } finally {
             setKpiLoading(false);
         }
     };
 
-    // Stats
-    const statsByStatus: Record<string, number> = {};
-    bindings.forEach(b => {
-        statsByStatus[b.status] = (statsByStatus[b.status] ?? 0) + 1;
-    });
+    const filteredRows = useMemo(() => {
+        const normalizedSearch = searchQuery.trim().toLowerCase();
+        return (intelligence?.rows ?? []).filter((row) => {
+            if (shoulderFilter && row.shoulder !== shoulderFilter) return false;
+            if (tractionFilter && row.tractionType !== tractionFilter) return false;
+            if (qualityFilter && row.status !== qualityFilter) return false;
+            if (onlyProblematic && (row.overDwellNowMinutes ?? 0) <= 0 && row.status === 'ok') return false;
+            if (!normalizedSearch) return true;
+            const haystack = [
+                row.locomotiveNumber,
+                row.locomotiveSeries,
+                row.arrivalTrainNumber,
+                row.bestCandidate?.trainNumber,
+                row.shoulder,
+                row.recommendationSummary,
+            ].join(' ').toLowerCase();
+            return haystack.includes(normalizedSearch);
+        });
+    }, [intelligence, onlyProblematic, qualityFilter, searchQuery, shoulderFilter, tractionFilter]);
 
-    const filteredBindings = searchQuery
-        ? bindings.filter(b =>
-            b.arrivalTrain?.number?.includes(searchQuery) ||
-            b.departureTrain?.number?.includes(searchQuery) ||
-            b.turnaroundStation?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-        : bindings;
+    useEffect(() => {
+        if (!filteredRows.length) {
+            setSelectedRow(null);
+            return;
+        }
+        if (!selectedRow || !filteredRows.some((row) => row.id === selectedRow.id)) {
+            setSelectedRow(filteredRows[0]);
+        }
+    }, [filteredRows, selectedRow]);
+
+    const shoulderOptions = useMemo(
+        () => Array.from(new Set((intelligence?.rows ?? []).map((row) => row.shoulder).filter((value): value is string => Boolean(value)))).sort((left, right) => left.localeCompare(right, 'ru')),
+        [intelligence],
+    );
+
+    const openCreateModal = (row?: BindingIntelligenceRow | null) => {
+        setCreateRow(row ?? selectedRow);
+        setIsCreateOpen(true);
+    };
 
     return (
         <div className="flex min-h-screen">
             <Sidebar stationId={stationId} />
             <div className="main-wrapper flex-1">
-
                 <header className="topbar">
                     <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-slate-950 via-sky-700 to-cyan-500 shadow-lg shadow-sky-200">
                             <Link2 size={18} className="text-white" />
                         </div>
                         <div>
                             <h1 className="text-lg font-bold text-gray-900">Подвязки локомотивов</h1>
-                            <p className="text-xs text-gray-400">BPMN-контур привязки рейсов к локомотивам</p>
+                            <p className="text-xs text-gray-400">Интеллектуальный диспетчерский инструмент по выбору следующего поезда под локомотив</p>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <input
                             type="text"
-                            placeholder="Период (2026-03)"
                             value={periodId}
-                            onChange={e => setPeriodId(e.target.value)}
-                            className="px-3 py-2 rounded-xl border border-gray-200 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                            onChange={(event) => setPeriodId(event.target.value)}
+                            className="w-32 rounded-2xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 outline-none ring-sky-200 transition focus:ring-2"
                         />
-                        <button onClick={loadBindings} className="btn-secondary" disabled={loading}>
-                            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Обновить
+                        <button onClick={() => Promise.all([loadBindings(), loadSummary(), loadIntelligence(typeof selectedDay === 'number' ? selectedDay : undefined)])} className="btn-secondary" disabled={bindingsLoading || intelligenceLoading}>
+                            <RefreshCw size={14} className={bindingsLoading || intelligenceLoading ? 'animate-spin' : ''} />
+                            Обновить
                         </button>
                     </div>
                 </header>
 
-                <main className="page-content">
-                    {/* Stat cards */}
-                    <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+                <main className="page-content space-y-6">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
                         {[
-                            { label: 'Всего', count: total, cls: 'bg-gray-50 text-gray-700', icon: Link2 },
-                            { label: 'Спланировано', count: statsByStatus.PLANNED ?? 0, cls: 'bg-green-50 text-green-700', icon: CheckCircle },
-                            { label: 'Конфликтов', count: statsByStatus.CONFLICT ?? 0, cls: 'bg-red-50 text-red-600', icon: AlertTriangle },
-                            { label: 'Черновики', count: statsByStatus.DRAFT ?? 0, cls: 'bg-blue-50 text-blue-600', icon: FileWarning },
-                            { label: 'Утверждено', count: statsByStatus.APPROVED ?? 0, cls: 'bg-emerald-50 text-emerald-700', icon: CheckCircle },
-                        ].map(s => (
-                            <div key={s.label} className={`rounded-2xl border border-gray-100 p-4 ${s.cls}`}>
-                                <div className="flex items-center gap-2 mb-1">
-                                    <s.icon size={16} />
-                                    <span className="text-xs font-medium">{s.label}</span>
+                            { label: 'Оперативных локомотивов', value: intelligence?.stats.totalLocomotives ?? 0, icon: Gauge, cls: 'bg-slate-50 text-slate-700' },
+                            { label: 'Есть рекомендация', value: intelligence?.stats.withRecommendation ?? 0, icon: Sparkles, cls: 'bg-sky-50 text-sky-700' },
+                            { label: 'Лучше подождать', value: intelligence?.stats.waitingForFit ?? 0, icon: Clock3, cls: 'bg-amber-50 text-amber-700' },
+                            { label: 'Вне нормы', value: intelligence?.stats.outOfNorm ?? 0, icon: AlertTriangle, cls: 'bg-rose-50 text-rose-700' },
+                            { label: 'Сохранённые подвязки', value: bindingsTotal, icon: CheckCircle2, cls: 'bg-emerald-50 text-emerald-700' },
+                        ].map((item) => (
+                            <div key={item.label} className={`rounded-[24px] border border-slate-100 p-4 shadow-sm ${item.cls}`}>
+                                <div className="mb-1 flex items-center gap-2 text-xs font-semibold">
+                                    <item.icon size={15} />
+                                    {item.label}
                                 </div>
-                                <p className="text-2xl font-bold">{s.count}</p>
+                                <div className="text-2xl font-black">{item.value}</div>
                             </div>
                         ))}
                     </div>
 
-                    {/* Actions bar */}
-                    <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-                        <div className="flex items-center gap-2">
-                            <div className="relative">
-                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                                <input
-                                    type="text"
-                                    placeholder="Поиск по № поезда / станции"
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    className="pl-8 pr-3 py-2 rounded-xl border border-gray-200 text-sm w-60 focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                                />
+                    <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-4 shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+                        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                            <div className="grid flex-1 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                                <div className="relative">
+                                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                    <input
+                                        value={searchQuery}
+                                        onChange={(event) => setSearchQuery(event.target.value)}
+                                        placeholder="Поиск по локомотиву, плечу, поезду"
+                                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-9 py-2.5 text-sm text-slate-700 outline-none ring-sky-200 transition focus:ring-2"
+                                    />
+                                </div>
+                                <select value={shoulderFilter} onChange={(event) => setShoulderFilter(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none ring-sky-200 transition focus:ring-2">
+                                    <option value="">Все плечи</option>
+                                    {shoulderOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+                                </select>
+                                <select value={tractionFilter} onChange={(event) => setTractionFilter(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none ring-sky-200 transition focus:ring-2">
+                                    <option value="">Вся тяга</option>
+                                    <option value="electric">Электровоз</option>
+                                    <option value="diesel">Тепловоз</option>
+                                    <option value="unknown">Не определено</option>
+                                </select>
+                                <select value={qualityFilter} onChange={(event) => setQualityFilter(event.target.value)} className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none ring-sky-200 transition focus:ring-2">
+                                    <option value="">Все статусы</option>
+                                    <option value="ok">В норме</option>
+                                    <option value="warning">Риск</option>
+                                    <option value="critical">Критично</option>
+                                    <option value="missing">Неполные данные</option>
+                                </select>
+                                <select
+                                    value={selectedDay}
+                                    onChange={(event) => {
+                                        const value = event.target.value ? Number(event.target.value) : '';
+                                        setSelectedDay(value);
+                                        void loadIntelligence(typeof value === 'number' ? value : undefined);
+                                    }}
+                                    className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none ring-sky-200 transition focus:ring-2"
+                                >
+                                    <option value="">Опер. день</option>
+                                    {(intelligence?.days ?? []).map((day) => <option key={day} value={day}>{day}</option>)}
+                                </select>
                             </div>
-                            <select
-                                value={statusFilter}
-                                onChange={e => setStatusFilter(e.target.value)}
-                                className="px-3 py-2 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
-                            >
-                                <option value="">Все статусы</option>
-                                {Object.entries(STATUS_MAP).map(([k, v]) => (
-                                    <option key={k} value={k}>{v.label}</option>
-                                ))}
-                            </select>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <label className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                                    <input type="checkbox" checked={onlyProblematic} onChange={(event) => setOnlyProblematic(event.target.checked)} />
+                                    Только проблемные
+                                </label>
+                                <button onClick={() => openCreateModal()} className="btn-primary">
+                                    <Plus size={14} />
+                                    Создать подвязку
+                                </button>
+                                <button onClick={handleConflictCheck} disabled={checking} className="btn-orange">
+                                    <ShieldAlert size={14} />
+                                    {checking ? 'Проверка...' : 'Проверить конфликты'}
+                                </button>
+                                <button onClick={handleCalcKpi} disabled={kpiLoading} className="btn-dark">
+                                    <BarChart3 size={14} />
+                                    {kpiLoading ? 'Расчёт...' : 'Рассчитать KPI'}
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setIsCreateOpen(true)} className="btn-primary">
-                                <Plus size={14} /> Создать подвязку
-                            </button>
-                            <button onClick={handleConflictCheck} disabled={checking} className="btn-orange">
-                                <Play size={14} /> {checking ? 'Проверка...' : 'Проверить конфликты'}
-                            </button>
-                            <button onClick={handleCalcKpi} disabled={kpiLoading} className="btn-dark">
-                                <BarChart3 size={14} /> {kpiLoading ? 'Расчёт...' : 'Рассчитать KPI'}
-                            </button>
+
+                        <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-slate-500">
+                            <span className="inline-flex items-center gap-1"><CalendarDays size={12} /> Срез графика: {intelligence?.cursorLabel ?? '—'}</span>
+                            <span className="inline-flex items-center gap-1"><PauseCircle size={12} /> В строках: {filteredRows.length} локомотивов</span>
+                            <span className="inline-flex items-center gap-1"><Clock3 size={12} /> Операционные сутки: {intelligence?.serviceDayStart ?? '20:00'} → 20:00</span>
                         </div>
                     </div>
 
-                    {/* Check result banner */}
                     {checkResult && (
-                        <div className={`announce mb-4 ${checkResult.error ? '' : ''}`}>
-                            {checkResult.error ? (
-                                <p className="text-red-500 text-sm">{checkResult.error}</p>
-                            ) : (
-                                <div className="flex items-center gap-4 text-sm">
-                                    <span className="font-semibold text-gray-900">Проверено: {checkResult.checked}</span>
-                                    <span className="text-red-500 font-semibold">Конфликтов: {checkResult.conflicts?.length ?? 0}</span>
-                                    <button className="text-sky-600 text-xs underline" onClick={() => setCheckResult(null)}>Закрыть</button>
-                                </div>
-                            )}
+                        <div className={`rounded-[24px] border px-4 py-3 text-sm ${checkResult.error ? 'border-rose-100 bg-rose-50 text-rose-700' : 'border-slate-200 bg-white text-slate-700'}`}>
+                            {checkResult.error
+                                ? checkResult.error
+                                : `Проверено подвязок: ${checkResult.checked}. Найдено конфликтов: ${checkResult.conflicts?.length ?? 0}.`}
                         </div>
                     )}
 
-                    {/* KPI panel */}
-                    {kpi && !kpi.error && kpi.avgDwell !== undefined && (
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-                            <div className="card">
-                                <p className="text-xs text-gray-400 mb-1">Ср. простой</p>
-                                <p className="text-xl font-bold text-gray-900">{formatDwell(Math.round(kpi.avgDwell))}</p>
+                    {kpi && !kpi.error && (
+                        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="text-xs text-slate-400">Средний простой</div>
+                                <div className="mt-1 text-xl font-black text-slate-950">{formatMinutes(Math.round(kpi.avgDwell))}</div>
                             </div>
-                            <div className="card">
-                                <p className="text-xs text-gray-400 mb-1">Макс. простой</p>
-                                <p className="text-xl font-bold text-gray-900">{formatDwell(kpi.maxDwell)}</p>
+                            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="text-xs text-slate-400">Максимум</div>
+                                <div className="mt-1 text-xl font-black text-slate-950">{formatMinutes(kpi.maxDwell)}</div>
                             </div>
-                            <div className="card">
-                                <p className="text-xs text-gray-400 mb-1">Утилизация</p>
-                                <p className="text-xl font-bold text-gray-900">{(kpi.utilization * 100).toFixed(1)}%</p>
+                            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="text-xs text-slate-400">Утилизация</div>
+                                <div className="mt-1 text-xl font-black text-slate-950">{(kpi.utilization * 100).toFixed(1)}%</div>
                             </div>
-                            <div className="card">
-                                <p className="text-xs text-gray-400 mb-1">Конфликтов</p>
-                                <p className="text-xl font-bold text-red-500">{kpi.conflictsCnt}</p>
+                            <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="text-xs text-slate-400">Конфликтов</div>
+                                <div className="mt-1 text-xl font-black text-rose-700">{kpi.conflictsCnt}</div>
                             </div>
                         </div>
                     )}
 
-                    {/* Conflict summary */}
-                    {conflictSummary && conflictSummary.total > 0 && (
-                        <div className="card mb-6">
-                            <h3 className="font-semibold text-sm text-gray-800 mb-3">Сводка конфликтов по типу</h3>
-                            <div className="flex flex-wrap gap-2">
-                                {Object.entries(conflictSummary.byCode).map(([code, cnt]: [string, any]) => (
-                                    <div key={code} className="flex items-center gap-1.5 bg-red-50 text-red-600 px-3 py-1.5 rounded-full text-xs font-medium">
-                                        <AlertTriangle size={12} />
-                                        {CONFLICT_CODE_MAP[code] ?? code}: {cnt}
-                                    </div>
-                                ))}
-                            </div>
+                    {conflictSummary?.total > 0 && (
+                        <div className="rounded-[28px] border border-rose-100 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+                            В периоде {periodId} уже зарегистрировано конфликтов: {conflictSummary.total}. Это важно учитывать перед ручной подвязкой.
                         </div>
                     )}
 
-                    {/* Bindings table */}
-                    <div className="card overflow-hidden">
+                    {intelligenceLoading ? (
+                        <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-10 text-center text-sm text-slate-500 shadow-sm">
+                            Считаю рекомендации по локомотивам и следующим поездам...
+                        </div>
+                    ) : (
+                        <>
+                            <BindingDwellBoard rows={filteredRows} selectedRowId={selectedRow?.id} onSelectRow={setSelectedRow} />
+                            <BindingRecommendationsTable
+                                rows={filteredRows}
+                                selectedRowId={selectedRow?.id}
+                                onSelectRow={setSelectedRow}
+                                onCreateBinding={(row) => openCreateModal(row)}
+                            />
+                        </>
+                    )}
+
+                    <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.06)]">
+                        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                            <div>
+                                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Сохранённые записи</div>
+                                <h2 className="mt-1 text-lg font-black text-slate-950">Уже созданные binding plans</h2>
+                            </div>
+                            <div className="text-xs text-slate-400">Период: {periodId}</div>
+                        </div>
+
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
+                            <table className="w-full min-w-[980px] text-sm">
                                 <thead>
-                                    <tr className="border-b border-gray-100">
-                                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Станция</th>
-                                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                                            <div className="flex items-center gap-1"><ArrowUpDown size={10} />Приход</div>
-                                        </th>
-                                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Отход</th>
-                                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Простой</th>
-                                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Статус</th>
-                                        <th className="text-left py-3 px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider">Конфликты</th>
+                                    <tr className="border-b border-slate-100 text-left">
+                                        {['Станция', 'Локомотив', 'Прибытие', 'Отправление', 'Простой', 'Статус', 'Конфликты'].map((label) => (
+                                            <th key={label} className="px-4 py-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">{label}</th>
+                                        ))}
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {loading ? (
-                                        [...Array(5)].map((_, i) => (
-                                            <tr key={i} className="border-b border-gray-50">
-                                                {[...Array(6)].map((_, j) => (
-                                                    <td key={j} className="py-3 px-4"><div className="h-4 bg-gray-100 rounded animate-pulse w-20" /></td>
-                                                ))}
-                                            </tr>
-                                        ))
-                                    ) : filteredBindings.length === 0 ? (
+                                    {bindingsLoading ? (
                                         <tr>
-                                            <td colSpan={6} className="text-center py-12 text-gray-400">
-                                                <Link2 size={32} className="mx-auto mb-2 text-gray-300" />
-                                                <p>Подвязок пока нет</p>
-                                                <p className="text-xs mt-1">Загрузите XLSX через <code className="bg-gray-100 px-1 rounded">POST /api/v1/files</code> или создайте через API</p>
-                                            </td>
+                                            <td colSpan={7} className="px-4 py-10 text-center text-slate-400">Загружаю сохранённые подвязки...</td>
+                                        </tr>
+                                    ) : bindings.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="px-4 py-10 text-center text-slate-400">Пока нет сохранённых binding plans для выбранного периода.</td>
                                         </tr>
                                     ) : (
-                                        filteredBindings.map(b => (
-                                            <tr key={b.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors cursor-pointer" onClick={() => { }}>
-                                                <td className="py-3 px-4">
-                                                    <span className="font-medium text-gray-900">{b.turnaroundStation?.name ?? '—'}</span>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <div>
-                                                        <span className="font-medium text-gray-900">№{b.arrivalTrain?.number ?? '—'}</span>
-                                                        <span className="text-gray-400 ml-2 text-xs">{formatDt(b.arrivalDt)}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <div>
-                                                        <span className="font-medium text-gray-900">№{b.departureTrain?.number ?? '—'}</span>
-                                                        <span className="text-gray-400 ml-2 text-xs">{formatDt(b.departureDt)}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <div className="flex items-center gap-1 text-gray-600">
-                                                        <Clock size={12} />
-                                                        <span>{formatDwell(b.dwellMinutes)}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${STATUS_MAP[b.status]?.cls ?? 'bg-gray-100 text-gray-600'}`}>
-                                                        {b.status === 'CONFLICT' && <AlertTriangle size={10} />}
-                                                        {b.status === 'APPROVED' && <CheckCircle size={10} />}
-                                                        {b.status === 'REJECTED' && <XCircle size={10} />}
-                                                        {STATUS_MAP[b.status]?.label ?? b.status}
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 px-4">
-                                                    {b.conflicts?.length > 0 ? (
-                                                        <span className="text-red-500 text-xs font-medium">
-                                                            {b.conflicts.length} конфликт(ов)
+                                        bindings.map((binding) => {
+                                            const locomotive = binding.allocations?.[0]?.locomotive ?? null;
+                                            return (
+                                                <tr key={binding.id} className="border-b border-slate-100 hover:bg-slate-50/60">
+                                                    <td className="px-4 py-4 font-semibold text-slate-900">{binding.turnaroundStation?.name ?? '—'}</td>
+                                                    <td className="px-4 py-4">
+                                                        {locomotive ? (
+                                                            <>
+                                                                <div className="font-mono font-black text-slate-950">{locomotive.number}</div>
+                                                                <div className="mt-1 text-xs text-slate-500">{locomotive.series}</div>
+                                                            </>
+                                                        ) : (
+                                                            <span className="text-slate-400">Не выбран</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-4">
+                                                        <div className="font-semibold text-slate-900">№{binding.arrivalTrain?.number ?? '—'}</div>
+                                                        <div className="mt-1 text-xs text-slate-500">{formatDt(binding.arrivalDt)}</div>
+                                                    </td>
+                                                    <td className="px-4 py-4">
+                                                        <div className="font-semibold text-slate-900">№{binding.departureTrain?.number ?? '—'}</div>
+                                                        <div className="mt-1 text-xs text-slate-500">{formatDt(binding.departureDt)}</div>
+                                                    </td>
+                                                    <td className="px-4 py-4 text-slate-700">{formatMinutes(binding.dwellMinutes)}</td>
+                                                    <td className="px-4 py-4">
+                                                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${STATUS_MAP[binding.status]?.cls ?? 'bg-slate-100 text-slate-600'}`}>
+                                                            {STATUS_MAP[binding.status]?.label ?? binding.status}
                                                         </span>
-                                                    ) : (
-                                                        <span className="text-green-500 text-xs">Нет</span>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        ))
+                                                    </td>
+                                                    <td className="px-4 py-4">
+                                                        {binding.conflicts?.length > 0 ? (
+                                                            <span className="text-xs font-bold text-rose-600">{binding.conflicts.length} конфликт(ов)</span>
+                                                        ) : (
+                                                            <span className="text-xs text-emerald-600">Нет</span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
                                     )}
                                 </tbody>
                             </table>
                         </div>
-                        {total > 0 && (
-                            <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-400 flex justify-between">
-                                <span>Показано: {filteredBindings.length} из {total}</span>
-                                <span>Период: {periodId}</span>
-                            </div>
-                        )}
                     </div>
                 </main>
-                <CreateBindingModal 
-                    isOpen={isCreateOpen} 
-                    onClose={() => setIsCreateOpen(false)} 
+
+                <CreateBindingModal
+                    isOpen={isCreateOpen}
+                    onClose={() => setIsCreateOpen(false)}
                     onSuccess={() => {
-                        loadBindings();
-                        loadSummary();
+                        void Promise.all([
+                            loadBindings(),
+                            loadSummary(),
+                            loadIntelligence(typeof selectedDay === 'number' ? selectedDay : undefined),
+                        ]);
                     }}
                     periodId={periodId}
                     initialStationId={stationId}
+                    intelligenceRows={intelligence?.rows ?? []}
+                    initialRow={createRow}
                 />
             </div>
         </div>

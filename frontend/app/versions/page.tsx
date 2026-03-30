@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Sidebar from '../../components/Sidebar';
 import {
     getScheduleVersions,
@@ -93,6 +93,297 @@ function statusFilterLabel(status: 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED') 
         REJECTED: 'Отклонено',
     };
     return map[status];
+}
+
+const TRACK_WINDOW_PADDING_MINUTES = 15;
+const TRACK_SOON_THRESHOLD_MINUTES = 30;
+const TRACK_FALLBACK_OCCUPANCY_MINUTES = 20;
+
+function safeDate(value: unknown) {
+    if (!value) return null;
+    const date = value instanceof Date ? value : new Date(String(value));
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatTime(value: unknown) {
+    const date = safeDate(value);
+    if (!date) return '—';
+    return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+}
+
+function formatDateTime(value: unknown) {
+    const date = safeDate(value);
+    if (!date) return '—';
+    return date.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+function formatDuration(totalMinutes: number | null | undefined) {
+    if (totalMinutes == null || !Number.isFinite(totalMinutes)) return '—';
+    const rounded = Math.max(0, Math.round(totalMinutes));
+    const hours = Math.floor(rounded / 60);
+    const minutes = rounded % 60;
+    if (hours && minutes) return `${hours} ч ${minutes} мин`;
+    if (hours) return `${hours} ч`;
+    return `${minutes} мин`;
+}
+
+function diffMinutes(from: Date, to: Date) {
+    return Math.max(0, Math.round((to.getTime() - from.getTime()) / 60_000));
+}
+
+function parseTrackOrder(trackName?: string | null) {
+    if (!trackName) return Number.MAX_SAFE_INTEGER;
+    const match = String(trackName).match(/(\d+)/);
+    return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
+}
+
+function normalizeTrackName(trackName?: string | null) {
+    if (!trackName) return 'Без пути';
+    const trimmed = String(trackName).trim();
+    const match = trimmed.match(/(\d+)/);
+    return match ? `Путь ${Number(match[1])}` : trimmed;
+}
+
+function clipNote(note?: string | null) {
+    if (!note) return '—';
+    return note.length > 90 ? `${note.slice(0, 87)}…` : note;
+}
+
+function statusTone(status: string) {
+    switch (status) {
+        case 'occupied':
+            return {
+                badge: 'bg-sky-50 text-sky-700 border-sky-200',
+                dot: 'bg-sky-500',
+                text: 'Занят',
+            };
+        case 'soon_free':
+            return {
+                badge: 'bg-amber-50 text-amber-700 border-amber-200',
+                dot: 'bg-amber-500',
+                text: 'Скоро освободится',
+            };
+        case 'soon_busy':
+            return {
+                badge: 'bg-orange-50 text-orange-700 border-orange-200',
+                dot: 'bg-orange-500',
+                text: 'Скоро будет занят',
+            };
+        case 'conflict':
+            return {
+                badge: 'bg-red-50 text-red-700 border-red-200',
+                dot: 'bg-red-500',
+                text: 'Конфликт',
+            };
+        default:
+            return {
+                badge: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                dot: 'bg-emerald-500',
+                text: 'Свободен',
+            };
+    }
+}
+
+function buildTrackDashboard(detail: any) {
+    const rawAllocations = Array.isArray(detail?.allocations) ? detail.allocations : [];
+    const segments = rawAllocations
+        .map((allocation: any) => {
+            const plannedDeparture = safeDate(allocation.plannedDeparture);
+            if (!plannedDeparture) return null;
+            const plannedArrival = safeDate(allocation.plannedArrival);
+            const occupancyStart = plannedArrival
+                ?? new Date(plannedDeparture.getTime() - TRACK_FALLBACK_OCCUPANCY_MINUTES * 60_000);
+            const occupancyEnd = plannedDeparture > occupancyStart
+                ? plannedDeparture
+                : new Date(occupancyStart.getTime() + 5 * 60_000);
+            const conflictEntries = Object.entries(allocation.conflictFlags ?? {}).filter(([, value]) => Boolean(value));
+
+            return {
+                id: allocation.id,
+                trainNumber: allocation.trainRun?.train?.number ?? '—',
+                trackName: normalizeTrackName(allocation.assignedTrack?.name),
+                trackOrder: parseTrackOrder(allocation.assignedTrack?.name),
+                plannedArrival,
+                plannedDeparture,
+                occupancyStart,
+                occupancyEnd,
+                slotStatus: allocation.slotStatus,
+                locomotiveLabel: allocation.assignedLocomotive
+                    ? `${allocation.assignedLocomotive.series}${allocation.assignedLocomotive.number}`
+                    : null,
+                notes: allocation.notes ?? null,
+                conflictTypes: conflictEntries.map(([key]) => conflictLabel(key)),
+                conflictCount: conflictEntries.length,
+            };
+        })
+        .filter(Boolean)
+        .sort((left: any, right: any) => {
+            const byTrack = left.trackOrder - right.trackOrder;
+            if (byTrack !== 0) return byTrack;
+            return left.occupancyStart.getTime() - right.occupancyStart.getTime();
+        });
+
+    const allTimestamps = segments.flatMap((segment: any) => [
+        segment.occupancyStart.getTime(),
+        segment.occupancyEnd.getTime(),
+    ]);
+    const fallbackBase = safeDate(detail?.createdAt) ?? new Date();
+    const baseStart = allTimestamps.length > 0 ? Math.min(...allTimestamps) : fallbackBase.getTime();
+    const baseEnd = allTimestamps.length > 0 ? Math.max(...allTimestamps) : fallbackBase.getTime() + 60 * 60_000;
+
+    const windowStart = new Date(baseStart - TRACK_WINDOW_PADDING_MINUTES * 60_000);
+    const windowEnd = new Date(baseEnd + TRACK_WINDOW_PADDING_MINUTES * 60_000);
+    const totalWindowMs = Math.max(windowEnd.getTime() - windowStart.getTime(), 60 * 60_000);
+    const liveNow = new Date();
+    const referenceTime = liveNow >= windowStart && liveNow <= windowEnd ? liveNow : windowStart;
+
+    const numericTrackOrders = segments
+        .map((segment: any) => segment.trackOrder)
+        .filter((value: number) => Number.isFinite(value));
+    const maxNumericTrack = Math.max(4, ...(numericTrackOrders.length > 0 ? numericTrackOrders : [0]));
+
+    const tracks = new Map<string, any>();
+    for (let trackNumber = 1; trackNumber <= maxNumericTrack; trackNumber += 1) {
+        const name = `Путь ${trackNumber}`;
+        tracks.set(name, {
+            name,
+            order: trackNumber,
+            segments: [],
+        });
+    }
+
+    segments.forEach((segment: any) => {
+        if (!tracks.has(segment.trackName)) {
+            tracks.set(segment.trackName, {
+                name: segment.trackName,
+                order: Number.isFinite(segment.trackOrder) ? segment.trackOrder : Number.MAX_SAFE_INTEGER,
+                segments: [],
+            });
+        }
+        tracks.get(segment.trackName).segments.push(segment);
+    });
+
+    const sortedTracks = Array.from(tracks.values())
+        .sort((left, right) => {
+            const byOrder = left.order - right.order;
+            if (byOrder !== 0) return byOrder;
+            return left.name.localeCompare(right.name, 'ru');
+        })
+        .map((track) => {
+            const trackSegments = [...track.segments].sort((left: any, right: any) => left.occupancyStart.getTime() - right.occupancyStart.getTime());
+            let freeCursor = new Date(windowStart);
+            const freeWindows: Array<{ start: Date; end: Date; durationMinutes: number }> = [];
+
+            trackSegments.forEach((segment: any) => {
+                if (segment.occupancyStart > freeCursor) {
+                    freeWindows.push({
+                        start: new Date(freeCursor),
+                        end: new Date(segment.occupancyStart),
+                        durationMinutes: diffMinutes(freeCursor, segment.occupancyStart),
+                    });
+                }
+                if (segment.occupancyEnd > freeCursor) {
+                    freeCursor = new Date(segment.occupancyEnd);
+                }
+            });
+
+            if (freeCursor < windowEnd) {
+                freeWindows.push({
+                    start: new Date(freeCursor),
+                    end: new Date(windowEnd),
+                    durationMinutes: diffMinutes(freeCursor, windowEnd),
+                });
+            }
+
+            const currentSegment = trackSegments.find((segment: any) => referenceTime >= segment.occupancyStart && referenceTime < segment.occupancyEnd) ?? null;
+            const nextSegment = trackSegments.find((segment: any) => segment.occupancyStart > referenceTime) ?? null;
+            const firstFreeWindow = freeWindows.find((window) => window.end > referenceTime && window.durationMinutes > 0) ?? null;
+            const hasConflict = trackSegments.some((segment: any) => segment.conflictCount > 0);
+
+            let status = 'free';
+            if (currentSegment?.conflictCount) {
+                status = 'conflict';
+            } else if (currentSegment) {
+                status = diffMinutes(referenceTime, currentSegment.occupancyEnd) <= TRACK_SOON_THRESHOLD_MINUTES ? 'soon_free' : 'occupied';
+            } else if (nextSegment?.conflictCount && diffMinutes(referenceTime, nextSegment.occupancyStart) <= TRACK_SOON_THRESHOLD_MINUTES) {
+                status = 'conflict';
+            } else if (nextSegment && diffMinutes(referenceTime, nextSegment.occupancyStart) <= TRACK_SOON_THRESHOLD_MINUTES) {
+                status = 'soon_busy';
+            }
+
+            const nextChangeAt = currentSegment?.occupancyEnd ?? nextSegment?.occupancyStart ?? null;
+            const statusMessage = currentSegment
+                ? `Поезд №${currentSegment.trainNumber} до ${formatTime(currentSegment.occupancyEnd)}`
+                : nextSegment
+                    ? `Свободен до ${formatTime(nextSegment.occupancyStart)}`
+                    : 'Свободен весь выбранный интервал';
+
+            return {
+                ...track,
+                segments: trackSegments,
+                freeWindows,
+                firstFreeWindow,
+                currentSegment,
+                nextSegment,
+                nextChangeAt,
+                hasConflict,
+                status,
+                statusMessage,
+                occupiedMinutes: trackSegments.reduce((sum: number, segment: any) => sum + diffMinutes(segment.occupancyStart, segment.occupancyEnd), 0),
+            };
+        });
+
+    const tickStart = new Date(windowStart);
+    tickStart.setMinutes(0, 0, 0);
+    if (tickStart > windowStart) {
+        tickStart.setHours(tickStart.getHours() - 1);
+    }
+    const tickEnd = new Date(windowEnd);
+    tickEnd.setMinutes(0, 0, 0);
+    tickEnd.setHours(tickEnd.getHours() + 1);
+
+    const ticks: Array<{ time: Date; left: number }> = [];
+    for (let cursor = tickStart.getTime(); cursor <= tickEnd.getTime(); cursor += 60 * 60_000) {
+        ticks.push({
+            time: new Date(cursor),
+            left: Math.min(100, Math.max(0, ((cursor - windowStart.getTime()) / totalWindowMs) * 100)),
+        });
+    }
+
+    return {
+        windowStart,
+        windowEnd,
+        referenceTime,
+        totalWindowMs,
+        ticks,
+        tracks: sortedTracks,
+        summary: {
+            totalTracks: sortedTracks.length,
+            freeTracks: sortedTracks.filter((track) => track.status === 'free').length,
+            occupiedTracks: sortedTracks.filter((track) => track.status === 'occupied' || track.status === 'soon_free').length,
+            soonChangeTracks: sortedTracks.filter((track) => track.status === 'soon_free' || track.status === 'soon_busy').length,
+            conflictTracks: sortedTracks.filter((track) => track.hasConflict).length,
+        },
+    };
+}
+
+function timelineLeftPercent(date: Date, dashboard: any) {
+    return Math.min(
+        100,
+        Math.max(0, ((date.getTime() - dashboard.windowStart.getTime()) / dashboard.totalWindowMs) * 100),
+    );
+}
+
+function timelineWidthPercent(start: Date, end: Date, dashboard: any) {
+    return Math.min(
+        100,
+        Math.max(1.5, ((end.getTime() - start.getTime()) / dashboard.totalWindowMs) * 100),
+    );
 }
 
 export default function VersionsPage() {
@@ -269,6 +560,8 @@ export default function VersionsPage() {
             setDetail(versionDetail);
         } catch { }
     };
+
+    const trackDashboard = useMemo(() => (detail ? buildTrackDashboard(detail) : null), [detail]);
 
     return (
         <div className="flex min-h-screen">
@@ -525,34 +818,250 @@ export default function VersionsPage() {
                                                             )}
                                                         </div>
 
-                                                        <div className="table-wrapper">
-                                                            <table className="table">
-                                                                <thead><tr><th>Поезд</th><th>План. отправление</th><th>Слот</th><th>Путь</th><th>Локомотив</th><th>Конфликты</th><th>Примечание</th></tr></thead>
-                                                                <tbody>
-                                                                    {(detail.allocations ?? []).slice(0, 10).map((a: any) => (
-                                                                        <tr key={a.id}>
-                                                                            <td><span className="font-mono font-bold text-sky-700 text-xs bg-sky-50 px-2 py-0.5 rounded-lg">#{a.trainRun?.train?.number}</span></td>
-                                                                            <td className="text-xs tabular-nums">{new Date(a.plannedDeparture).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</td>
-                                                                            <td>
-                                                                                <span className={a.slotStatus === 'IMMEDIATE' ? 'badge-green' : a.slotStatus === 'WAITING_QUEUE' ? 'badge-yellow' : 'badge-blue'}>
-                                                                                    {slotStatusLabel(a.slotStatus)}
-                                                                                </span>
-                                                                            </td>
-                                                                            <td className="text-gray-600">{a.assignedTrack?.name ?? '—'}</td>
-                                                                            <td className="text-xs font-mono text-gray-500">{a.assignedLocomotive ? `${a.assignedLocomotive.series}${a.assignedLocomotive.number}` : '—'}</td>
-                                                                            <td>
-                                                                                {Object.entries(a.conflictFlags ?? {}).filter(([, value]) => value).map(([k]) => <span key={k} className="badge-red mr-1">{conflictLabel(k)}</span>)}
-                                                                                {!Object.values(a.conflictFlags ?? {}).some(Boolean) && <span className="badge-green"><CheckCircle2 size={10} className="inline -mt-0.5 mr-0.5" />ОК</span>}
-                                                                            </td>
-                                                                            <td className="text-xs text-gray-400 max-w-xs truncate">{a.notes || '—'}</td>
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                            {detail.allocations?.length > 10 && (
-                                                                <p className="text-xs text-gray-400 px-1 pt-2">Показано 10 из {detail.allocations.length}</p>
-                                                            )}
-                                                        </div>
+                                                        {trackDashboard && (
+                                                            <div className="space-y-4">
+                                                                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                                    <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                                                                        <div>
+                                                                            <h3 className="text-base font-semibold text-slate-900">Пути в окне версии</h3>
+                                                                            <p className="mt-1 text-sm text-slate-500">
+                                                                                Окно занятости {formatTime(trackDashboard.windowStart)}–{formatTime(trackDashboard.windowEnd)}.
+                                                                                Статус рассчитан относительно {formatTime(trackDashboard.referenceTime)} внутри выбранного интервала.
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-right">
+                                                                            <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">Таймфрейм</div>
+                                                                            <div className="mt-1 text-sm font-semibold text-slate-700">
+                                                                                {formatDateTime(trackDashboard.windowStart)} → {formatTime(trackDashboard.windowEnd)}
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                                                                        {[
+                                                                            { label: 'Всего путей', value: trackDashboard.summary.totalTracks, tone: 'border-slate-200 bg-slate-50 text-slate-700' },
+                                                                            { label: 'Свободны', value: trackDashboard.summary.freeTracks, tone: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+                                                                            { label: 'Заняты', value: trackDashboard.summary.occupiedTracks, tone: 'border-sky-200 bg-sky-50 text-sky-700' },
+                                                                            { label: 'Скоро меняются', value: trackDashboard.summary.soonChangeTracks, tone: 'border-amber-200 bg-amber-50 text-amber-700' },
+                                                                            { label: 'Конфликтные', value: trackDashboard.summary.conflictTracks, tone: 'border-red-200 bg-red-50 text-red-700' },
+                                                                        ].map((item) => (
+                                                                            <div key={item.label} className={`rounded-2xl border px-4 py-3 ${item.tone}`}>
+                                                                                <div className="text-[11px] font-medium uppercase tracking-[0.18em] opacity-70">{item.label}</div>
+                                                                                <div className="mt-2 text-2xl font-semibold">{item.value}</div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+
+                                                                    <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200">
+                                                                        <div className="grid grid-cols-[220px,minmax(0,1fr)] border-b border-slate-200 bg-slate-50">
+                                                                            <div className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Путь</div>
+                                                                            <div className="relative h-12 overflow-hidden px-3">
+                                                                                {trackDashboard.ticks.map((tick: any) => (
+                                                                                    <div key={tick.time.toISOString()} className="absolute inset-y-0" style={{ left: `${tick.left}%` }}>
+                                                                                        <div className="absolute inset-y-0 w-px bg-slate-200" />
+                                                                                        <div className="absolute left-2 top-3 text-[11px] font-medium tabular-nums text-slate-400">
+                                                                                            {formatTime(tick.time)}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="divide-y divide-slate-200">
+                                                                            {trackDashboard.tracks.map((track: any) => {
+                                                                                const tone = statusTone(track.status);
+                                                                                return (
+                                                                                    <div key={track.name} className="grid grid-cols-[220px,minmax(0,1fr)] gap-3 px-4 py-3">
+                                                                                        <div className="min-w-0">
+                                                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                                                <span className="text-sm font-semibold text-slate-900">{track.name}</span>
+                                                                                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold ${tone.badge}`}>
+                                                                                                    <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
+                                                                                                    {tone.text}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            <p className="mt-1 text-sm text-slate-600">{track.statusMessage}</p>
+                                                                                            <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                                                                                                <span>Планов в окне: {track.segments.length}</span>
+                                                                                                <span>Занято: {formatDuration(track.occupiedMinutes)}</span>
+                                                                                                <span>
+                                                                                                    {track.firstFreeWindow
+                                                                                                        ? `Ближайшее окно ${formatTime(track.firstFreeWindow.start)}–${formatTime(track.firstFreeWindow.end)}`
+                                                                                                        : 'Свободных окон в окне нет'}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        </div>
+
+                                                                                        <div className="relative h-24 overflow-hidden rounded-2xl border border-slate-200 bg-slate-950/[0.03] px-3">
+                                                                                            {trackDashboard.ticks.map((tick: any) => (
+                                                                                                <div key={`${track.name}-${tick.time.toISOString()}`} className="absolute inset-y-0" style={{ left: `${tick.left}%` }}>
+                                                                                                    <div className="absolute inset-y-0 w-px bg-slate-200/90" />
+                                                                                                </div>
+                                                                                            ))}
+
+                                                                                            <div className="absolute inset-y-0 z-10" style={{ left: `${timelineLeftPercent(trackDashboard.referenceTime, trackDashboard)}%` }}>
+                                                                                                <div className="absolute inset-y-0 w-px bg-slate-900/20" />
+                                                                                                <div className="absolute left-2 top-2 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-500 shadow-sm">
+                                                                                                    Опорное время
+                                                                                                </div>
+                                                                                            </div>
+
+                                                                                            {track.segments.length === 0 && (
+                                                                                                <div className="absolute inset-0 flex items-center justify-center text-sm text-slate-400">
+                                                                                                    В выбранном окне путь свободен
+                                                                                                </div>
+                                                                                            )}
+
+                                                                                            {track.segments.map((segment: any) => {
+                                                                                                const left = timelineLeftPercent(segment.occupancyStart, trackDashboard);
+                                                                                                const width = timelineWidthPercent(segment.occupancyStart, segment.occupancyEnd, trackDashboard);
+                                                                                                const useOutsideLabel = width < 10;
+                                                                                                const segmentTone = segment.conflictCount > 0
+                                                                                                    ? 'border-red-300 bg-red-500/15 text-red-700'
+                                                                                                    : segment.slotStatus === 'WAITING_QUEUE'
+                                                                                                        ? 'border-amber-300 bg-amber-500/15 text-amber-700'
+                                                                                                        : 'border-sky-300 bg-sky-500/15 text-sky-700';
+
+                                                                                                return (
+                                                                                                    <div key={segment.id}>
+                                                                                                        {useOutsideLabel && (
+                                                                                                            <div className="absolute top-3 z-20 -translate-x-1/2 rounded-full border border-white bg-slate-900 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm" style={{ left: `${left}%` }}>
+                                                                                                                №{segment.trainNumber}
+                                                                                                            </div>
+                                                                                                        )}
+                                                                                                        <div
+                                                                                                            className={`absolute top-10 h-9 overflow-hidden rounded-xl border px-2 py-1 shadow-sm ${segmentTone}`}
+                                                                                                            style={{ left: `${left}%`, width: `${width}%` }}
+                                                                                                            title={`Поезд №${segment.trainNumber}\n${formatTime(segment.occupancyStart)}–${formatTime(segment.occupancyEnd)}\nЛокомотив: ${segment.locomotiveLabel ?? '—'}\nСлот: ${slotStatusLabel(segment.slotStatus)}`}
+                                                                                                        >
+                                                                                                            {!useOutsideLabel && (
+                                                                                                                <>
+                                                                                                                    <div className="truncate text-[11px] font-semibold">
+                                                                                                                        №{segment.trainNumber} · {formatTime(segment.occupancyStart)}–{formatTime(segment.occupancyEnd)}
+                                                                                                                    </div>
+                                                                                                                    {segment.locomotiveLabel && <div className="truncate text-[10px] opacity-75">{segment.locomotiveLabel}</div>}
+                                                                                                                </>
+                                                                                                            )}
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                );
+                                                                                            })}
+                                                                                        </div>
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                                                        <div>
+                                                                            <h3 className="text-base font-semibold text-slate-900">План по путям</h3>
+                                                                            <p className="mt-1 text-sm text-slate-500">
+                                                                                Список перестроен по логике диспетчера: сначала путь, внутри пути — по хронологии.
+                                                                            </p>
+                                                                        </div>
+                                                                        <span className="text-xs font-medium text-slate-400">Всего назначений: {detail.allocations?.length ?? 0}</span>
+                                                                    </div>
+
+                                                                    <div className="mt-4 space-y-3">
+                                                                        {trackDashboard.tracks.map((track: any) => {
+                                                                            const tone = statusTone(track.status);
+                                                                            return (
+                                                                                <details
+                                                                                    key={`${track.name}-details`}
+                                                                                    open={track.segments.length > 0}
+                                                                                    className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70"
+                                                                                >
+                                                                                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                                                                                        <div className="min-w-0">
+                                                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                                                <span className="font-semibold text-slate-900">{track.name}</span>
+                                                                                                <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[11px] font-semibold ${tone.badge}`}>
+                                                                                                    <span className={`h-2 w-2 rounded-full ${tone.dot}`} />
+                                                                                                    {tone.text}
+                                                                                                </span>
+                                                                                                <span className="text-xs text-slate-400">Назначений: {track.segments.length}</span>
+                                                                                            </div>
+                                                                                            <p className="mt-1 text-sm text-slate-500">{track.statusMessage}</p>
+                                                                                        </div>
+                                                                                        <div className="text-right text-xs text-slate-400">
+                                                                                            {track.nextChangeAt ? `Следующее изменение в ${formatTime(track.nextChangeAt)}` : 'Без изменений в окне'}
+                                                                                        </div>
+                                                                                    </summary>
+
+                                                                                    <div className="border-t border-slate-200 bg-white">
+                                                                                        {track.segments.length > 0 ? (
+                                                                                            <div className="divide-y divide-slate-100">
+                                                                                                {track.segments.map((segment: any) => (
+                                                                                                    <div
+                                                                                                        key={`${track.name}-${segment.id}`}
+                                                                                                        className="grid gap-3 px-4 py-3 md:grid-cols-[96px,190px,140px,150px,minmax(0,1fr)]"
+                                                                                                    >
+                                                                                                        <div className="min-w-0">
+                                                                                                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Поезд</div>
+                                                                                                            <div className="mt-1 inline-flex rounded-full bg-sky-50 px-2 py-1 font-mono text-xs font-semibold text-sky-700">
+                                                                                                                №{segment.trainNumber}
+                                                                                                            </div>
+                                                                                                        </div>
+
+                                                                                                        <div className="min-w-0">
+                                                                                                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Занятость</div>
+                                                                                                            <div className="mt-1 text-sm font-semibold text-slate-800">
+                                                                                                                {formatTime(segment.occupancyStart)}–{formatTime(segment.occupancyEnd)}
+                                                                                                            </div>
+                                                                                                            <div className="text-xs text-slate-500">
+                                                                                                                Окно {formatDuration(diffMinutes(segment.occupancyStart, segment.occupancyEnd))}
+                                                                                                            </div>
+                                                                                                        </div>
+
+                                                                                                        <div className="min-w-0">
+                                                                                                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Слот</div>
+                                                                                                            <div className="mt-1">
+                                                                                                                <span className={segment.slotStatus === 'IMMEDIATE' ? 'badge-green' : segment.slotStatus === 'WAITING_QUEUE' ? 'badge-yellow' : 'badge-blue'}>
+                                                                                                                    {slotStatusLabel(segment.slotStatus)}
+                                                                                                                </span>
+                                                                                                            </div>
+                                                                                                        </div>
+
+                                                                                                        <div className="min-w-0">
+                                                                                                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Локомотив</div>
+                                                                                                            <div className="mt-1 font-mono text-xs text-slate-600">{segment.locomotiveLabel ?? '—'}</div>
+                                                                                                        </div>
+
+                                                                                                        <div className="min-w-0">
+                                                                                                            <div className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Ограничения и комментарии</div>
+                                                                                                            <div className="mt-1 flex flex-wrap gap-1.5">
+                                                                                                                {segment.conflictTypes.length > 0 ? (
+                                                                                                                    segment.conflictTypes.map((conflictType: string) => (
+                                                                                                                        <span key={conflictType} className="badge-red">{conflictType}</span>
+                                                                                                                    ))
+                                                                                                                ) : (
+                                                                                                                    <span className="badge-green">
+                                                                                                                        <CheckCircle2 size={10} className="inline -mt-0.5 mr-0.5" />
+                                                                                                                        Без конфликтов
+                                                                                                                    </span>
+                                                                                                                )}
+                                                                                                            </div>
+                                                                                                            <div className="mt-2 text-xs text-slate-500" title={segment.notes ?? undefined}>
+                                                                                                                {clipNote(segment.notes)}
+                                                                                                            </div>
+                                                                                                        </div>
+                                                                                                    </div>
+                                                                                                ))}
+                                                                                            </div>
+                                                                                        ) : (
+                                                                                            <div className="px-4 py-5 text-sm text-slate-400">В выбранном окне по этому пути нет запланированных занятий.</div>
+                                                                                        )}
+                                                                                    </div>
+                                                                                </details>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>

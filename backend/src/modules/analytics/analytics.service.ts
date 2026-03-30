@@ -262,9 +262,21 @@ export class AnalyticsService {
 
         items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+        const summary = {
+            pendingApprovals,
+            totalConflicts,
+            recentEventsCount: recentEvents.length,
+            criticalCount: items.filter((item) => item.level === 'critical').length,
+            warningCount: items.filter((item) => item.level === 'warning').length,
+            infoCount: items.filter((item) => item.level === 'info').length,
+            latestVersionId,
+            latestEventAt: recentEvents[0]?.createdAt.toISOString() ?? null,
+        };
+
         return {
             stationId,
             generatedAt: new Date().toISOString(),
+            summary,
             unreadCount: items.length,
             items: items.slice(0, 12),
         };

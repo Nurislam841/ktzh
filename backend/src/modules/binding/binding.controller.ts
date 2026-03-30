@@ -39,6 +39,13 @@ export class BindingController {
         });
     }
 
+    @Get('intelligence')
+    @ApiOperation({ summary: 'Get operational intelligence for locomotive bindings' })
+    @ApiQuery({ name: 'day', required: false })
+    async intelligence(@Query('day') day?: string) {
+        return this.binding.getOperationalIntelligence(day ? parseInt(day, 10) : undefined);
+    }
+
     @Get(':bindingId')
     @ApiOperation({ summary: 'Get binding plan detail' })
     async detail(@Param('bindingId') bindingId: string) {
