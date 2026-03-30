@@ -6,8 +6,10 @@ import Sidebar from '../../components/Sidebar';
 import {
   getAnalytics,
   getBindings,
+  getCrewCalls,
   getDashboardNotifications,
   getEvents,
+  getNodeDecisionQueue,
   getNodeOverview,
   getNodeResources,
   getNodeSnapshot,
@@ -161,12 +163,15 @@ function DashboardPageContent() {
   const [notifications, setNotifications] = useState<any>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [snapshot, setSnapshot] = useState<any>(null);
+  const [decisionQueue, setDecisionQueue] = useState<any>(null);
+  const [crewCalls, setCrewCalls] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [feedLoading, setFeedLoading] = useState(false);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   const [calendarDraftAt, setCalendarDraftAt] = useState('');
   const [tableSearch, setTableSearch] = useState('');
   const [tableStatus, setTableStatus] = useState('');
+  const [boardHours, setBoardHours] = useState(12);
 
   const syncRoute = useCallback((next: { stationId?: string; view?: DashboardView; at?: string | null }, replace = false) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -180,23 +185,25 @@ function DashboardPageContent() {
     if (replace) router.replace(href); else router.push(href);
   }, [router, searchParams]);
 
-  const loadCore = useCallback(async (sid: string) => {
+  const loadCore = useCallback(async (sid: string, hours = boardHours) => {
     if (!sid) return;
     setLoading(true);
     try {
-      const [a, v, o, r, n, b] = await Promise.all([
+      const [a, v, o, r, n, b, dq, cc] = await Promise.all([
         getAnalytics(sid),
         getScheduleVersions(sid, { limit: 8 }),
-        getNodeOverview(sid),
+        getNodeOverview(sid, undefined, undefined, hours),
         getNodeResources(sid),
         getDashboardNotifications(sid),
         getBindings({ stationId: sid, take: 100 }),
+        getNodeDecisionQueue(sid, hours),
+        getCrewCalls(sid, hours),
       ]);
-      setAnalytics(a); setVersions(v); setOverview(o); setResources(r); setNotifications(n); setBindings(b.items ?? []);
+      setAnalytics(a); setVersions(v); setOverview(o); setResources(r); setNotifications(n); setBindings(b.items ?? []); setDecisionQueue(dq); setCrewCalls(cc);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [boardHours]);
 
   const loadFeed = useCallback(async (sid: string) => {
     if (!sid) return;
@@ -243,8 +250,8 @@ function DashboardPageContent() {
   }, [stationParam, syncRoute]);
 
   useEffect(() => {
-    if (stationId) void loadCore(stationId);
-  }, [loadCore, stationId]);
+    if (stationId) void loadCore(stationId, boardHours);
+  }, [boardHours, loadCore, stationId]);
 
   useEffect(() => {
     if (view === 'feed' && stationId) void loadFeed(stationId);
@@ -272,6 +279,39 @@ function DashboardPageContent() {
       { title: 'Завершено', dot: 'bg-emerald-500', items: items.filter((item) => ['DEPARTED', 'ARRIVED', 'CANCELLED'].includes(item.trainRun?.status)) },
     ];
   }, [overview]);
+
+  const boardUpcoming = useMemo(() => {
+    return [...(overview?.trainRuns ?? [])]
+      .sort((left: any, right: any) => new Date(left.plannedDeparture).getTime() - new Date(right.plannedDeparture).getTime())
+      .slice(0, 8);
+  }, [overview]);
+
+  const boardRisks = useMemo(() => (decisionQueue?.items ?? []).slice(0, 8), [decisionQueue]);
+
+  const boardCrewCalls = useMemo(() => {
+    return (crewCalls?.items ?? [])
+      .filter((item: any) => item.status !== 'CONFIRMED')
+      .slice(0, 8);
+  }, [crewCalls]);
+
+  const boardIdleLocomotives = useMemo(() => {
+    return [...(resources?.locomotives ?? [])]
+      .filter((item: any) => item.status === 'AVAILABLE')
+      .sort((left: any, right: any) => new Date(left.availableFrom).getTime() - new Date(right.availableFrom).getTime())
+      .slice(0, 8);
+  }, [resources]);
+
+  const boardUsedLocomotives = useMemo(() => {
+    return new Set((overview?.trainRuns ?? []).map((item: any) => item.locomotive?.id).filter(Boolean)).size;
+  }, [overview]);
+
+  const boardUsedCrews = useMemo(() => {
+    return new Set((overview?.trainRuns ?? []).map((item: any) => item.crew?.id).filter(Boolean)).size;
+  }, [overview]);
+
+  const boardConflictCount = useMemo(() => {
+    return (decisionQueue?.items ?? []).filter((item: any) => item.severity === 'critical' || item.severity === 'warning').length;
+  }, [decisionQueue]);
 
   const feedItems = useMemo<FeedItem[]>(() => {
     const fromEvents: FeedItem[] = events.map((event: any) => ({
@@ -383,7 +423,7 @@ function DashboardPageContent() {
               {view === 'calendar' && 'Календарный snapshot'}
             </h1>
             <p className="mt-2 text-sm text-slate-500">
-              {view === 'board' && 'Доска показывает текущие allocations/train runs последней версии расписания и больше не уводит на простои.'}
+              {view === 'board' && 'Главная страница показывает ближайшую работу по одному окну времени: отправления, риски, вызовы бригад и свободную тягу.'}
               {view === 'feed' && 'Лента — единственная вкладка с потоком событий простоев и операционных изменений.'}
               {view === 'table' && 'Таблица — живой data-table из Allocation, TrainRun, Track, Locomotive и Crew.'}
               {view === 'calendar' && 'Календарь выбирает дату и время и грузит реальный snapshot станции на этот timestamp.'}
@@ -391,10 +431,10 @@ function DashboardPageContent() {
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <div className="stat-card"><div className="stat-icon bg-sky-50 text-sky-600"><Train size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Маршруты</div><div className="mt-1 text-2xl font-black text-slate-950">{analytics?.totalTrains ?? 0}</div><div className="mt-1 text-xs text-slate-500">Latest schedule version</div></div></div>
-            <div className="stat-card"><div className="stat-icon bg-rose-50 text-rose-600"><AlertTriangle size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Конфликты</div><div className="mt-1 text-2xl font-black text-slate-950">{notifications?.summary?.totalConflicts ?? totalConflicts}</div><div className="mt-1 text-xs text-slate-500">Analytics + conflict flags</div></div></div>
-            <div className="stat-card"><div className="stat-icon bg-violet-50 text-violet-600"><Gauge size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Локомотивы</div><div className="mt-1 text-2xl font-black text-slate-950">{resources?.summary?.locomotives ?? 0}</div><div className="mt-1 text-xs text-slate-500">Свободны: {resources?.summary?.availableLocomotives ?? 0}</div></div></div>
-            <div className="stat-card"><div className="stat-icon bg-emerald-50 text-emerald-600"><Users size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Бригады</div><div className="mt-1 text-2xl font-black text-slate-950">{resources?.summary?.crews ?? 0}</div><div className="mt-1 text-xs text-slate-500">Свободны: {resources?.summary?.availableCrews ?? 0}</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-sky-50 text-sky-600"><Train size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">{view === 'board' ? 'Отправления' : 'Маршруты'}</div><div className="mt-1 text-2xl font-black text-slate-950">{view === 'board' ? boardUpcoming.length : analytics?.totalTrains ?? 0}</div><div className="mt-1 text-xs text-slate-500">{view === 'board' ? `В окне ${boardHours}ч` : 'Latest schedule version'}</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-rose-50 text-rose-600"><AlertTriangle size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Конфликты</div><div className="mt-1 text-2xl font-black text-slate-950">{view === 'board' ? boardConflictCount : notifications?.summary?.totalConflicts ?? totalConflicts}</div><div className="mt-1 text-xs text-slate-500">{view === 'board' ? 'Требуют решения в окне' : 'Analytics + conflict flags'}</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-violet-50 text-violet-600"><Gauge size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Локомотивы</div><div className="mt-1 text-2xl font-black text-slate-950">{resources?.summary?.locomotives ?? 0}</div><div className="mt-1 text-xs text-slate-500">{view === 'board' ? `В работе: ${boardUsedLocomotives}` : `Свободны: ${resources?.summary?.availableLocomotives ?? 0}`}</div></div></div>
+            <div className="stat-card"><div className="stat-icon bg-emerald-50 text-emerald-600"><Users size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Бригады</div><div className="mt-1 text-2xl font-black text-slate-950">{resources?.summary?.crews ?? 0}</div><div className="mt-1 text-xs text-slate-500">{view === 'board' ? `Под вызов: ${boardCrewCalls.length} · В работе: ${boardUsedCrews}` : `Свободны: ${resources?.summary?.availableCrews ?? 0}`}</div></div></div>
             <div className="stat-card"><div className="stat-icon bg-amber-50 text-amber-600"><Clock3 size={18} /></div><div><div className="text-xs uppercase tracking-[0.16em] text-slate-400">Версии</div><div className="mt-1 text-2xl font-black text-slate-950">{versions?.total ?? 0}</div><div className="mt-1 text-xs text-slate-500">Pending: {notifications?.summary?.pendingApprovals ?? 0}</div></div></div>
           </div>
 
@@ -420,20 +460,135 @@ function DashboardPageContent() {
           {loading && <div className="rounded-[28px] border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500 shadow-sm">Загружаю реальное состояние станции...</div>}
 
           {!loading && view === 'board' && (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
-              {boardColumns.map((column) => (
-                <div key={column.title} className="kanban-col">
-                  <div className="kanban-header"><div className="flex items-center gap-2"><span className={`inline-block h-2 w-2 rounded-full ${column.dot}`} /><span className="text-sm font-semibold text-slate-700">{column.title}</span><span className="badge-gray">{column.items.length}</span></div></div>
-                  {column.items.slice(0, 6).map((item: any) => (
-                    <div key={item.allocationId} className="kanban-card">
-                      <div className="flex items-center justify-between gap-3"><div><div className="font-semibold text-slate-900">Поезд №{item.trainRun?.number ?? '—'}</div><div className="mt-1 text-xs text-slate-400">{item.trainRun?.origin?.name ?? '—'} → {item.trainRun?.destination?.name ?? '—'}</div></div><span className={TRAIN_STATUS_META[item.trainRun?.status]?.cls ?? 'badge-gray'}>{TRAIN_STATUS_META[item.trainRun?.status]?.label ?? item.trainRun?.status ?? '—'}</span></div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500"><div>Путь: <span className="font-semibold text-slate-700">{item.track?.name ?? '—'}</span></div><div>План: <span className="font-semibold text-slate-700">{formatTime(item.plannedDeparture)}</span></div><div>Локомотив: <span className="font-semibold text-slate-700">{item.locomotive?.label ?? '—'}</span></div><div>Бригада: <span className="font-semibold text-slate-700">{item.crew?.id ? item.crew.id.slice(0, 8) : '—'}</span></div></div>
-                    </div>
-                  ))}
-                  {column.items.length === 0 && <div className="rounded-[20px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-xs text-slate-400">В этом столбце сейчас нет записей.</div>}
+            <>
+              <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Board window</div>
+                    <h2 className="mt-1 text-lg font-black text-slate-950">Оперативное окно станции</h2>
+                    <div className="mt-2 text-sm text-slate-500">Все карточки ниже смотрят на одно окно времени. Из-за этого верхние цифры и содержимое доски больше не расходятся.</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[6, 12, 24].map((hours) => (
+                      <button key={hours} onClick={() => setBoardHours(hours)} className={boardHours === hours ? 'badge-blue' : 'badge-gray'}>
+                        {hours}ч
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              ))}
-            </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 xl:grid-cols-4">
+                <div className="card">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Departures</div>
+                      <h3 className="mt-1 text-lg font-black text-slate-950">Ближайшие отправления</h3>
+                    </div>
+                    <span className="badge-blue">{boardUpcoming.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {boardUpcoming.map((item: any) => (
+                      <div key={item.allocationId} className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-slate-900">Поезд №{item.trainRun?.number ?? '—'}</div>
+                          <span className={TRAIN_STATUS_META[item.trainRun?.status]?.cls ?? 'badge-gray'}>{TRAIN_STATUS_META[item.trainRun?.status]?.label ?? item.trainRun?.status ?? '—'}</span>
+                        </div>
+                        <div className="mt-2 text-xs text-slate-500">{item.trainRun?.origin?.name ?? '—'} → {item.trainRun?.destination?.name ?? '—'}</div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                          <div>Отпр.: <span className="font-semibold text-slate-700">{formatTime(item.plannedDeparture)}</span></div>
+                          <div>Путь: <span className="font-semibold text-slate-700">{item.track?.name ?? '—'}</span></div>
+                          <div>Локо: <span className="font-semibold text-slate-700">{item.locomotive?.label ?? '—'}</span></div>
+                          <div>Бригада: <span className="font-semibold text-slate-700">{item.crew?.id ? item.crew.id.slice(0, 8) : '—'}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                    {boardUpcoming.length === 0 && <div className="rounded-[20px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">В ближайшие {boardHours} часов отправлений нет.</div>}
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Decisions</div>
+                      <h3 className="mt-1 text-lg font-black text-slate-950">Требуют решения</h3>
+                    </div>
+                    <span className="badge-red">{boardRisks.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {boardRisks.map((item: any) => (
+                      <div key={item.allocationId} className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-slate-900">Поезд №{item.trainNumber}</div>
+                          <span className={item.severity === 'critical' ? 'badge-red' : item.severity === 'warning' ? 'badge-yellow' : 'badge-blue'}>
+                            {item.severity === 'critical' ? 'Критично' : item.severity === 'warning' ? 'Внимание' : 'Инфо'}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-sm text-slate-600">{item.summary}</div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                          <div>Отпр.: <span className="font-semibold text-slate-700">{formatTime(item.plannedDeparture)}</span></div>
+                          <div>Задержка: <span className="font-semibold text-slate-700">{formatMinutes(item.delayMinutes)}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                    {boardRisks.length === 0 && <div className="rounded-[20px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">В окне {boardHours}ч критичных решений не требуется.</div>}
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Crew</div>
+                      <h3 className="mt-1 text-lg font-black text-slate-950">Вызов бригад</h3>
+                    </div>
+                    <span className="badge-yellow">{boardCrewCalls.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {boardCrewCalls.map((item: any) => (
+                      <div key={item.id} className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="font-semibold text-slate-900">Поезд №{item.trainRun?.number ?? '—'}</div>
+                          <span className={item.status === 'MISSED' ? 'badge-red' : 'badge-yellow'}>{item.status}</span>
+                        </div>
+                        <div className="mt-2 text-sm text-slate-600">{item.notes ?? 'Требуется подтверждение.'}</div>
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                          <div>Явка: <span className="font-semibold text-slate-700">{formatTime(item.mustReportAt)}</span></div>
+                          <div>Приемка: <span className="font-semibold text-slate-700">{formatTime(item.acceptedLocomotiveAt)}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                    {boardCrewCalls.length === 0 && <div className="rounded-[20px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">Все бригады в окне {boardHours}ч подтверждены или не требуют вызова.</div>}
+                  </div>
+                </div>
+
+                <div className="card">
+                  <div className="flex items-center justify-between gap-3 mb-4">
+                    <div>
+                      <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-400">Fleet</div>
+                      <h3 className="mt-1 text-lg font-black text-slate-950">Свободная тяга</h3>
+                    </div>
+                    <span className="badge-gray">{boardIdleLocomotives.length}</span>
+                  </div>
+                  <div className="space-y-3">
+                    {boardIdleLocomotives.map((item: any) => {
+                      const idleMinutes = Math.max(0, Math.round((Date.now() - new Date(item.availableFrom).getTime()) / 60000));
+                      return (
+                        <div key={item.id} className="rounded-[20px] border border-slate-100 bg-slate-50/70 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="font-semibold text-slate-900">{item.label}</div>
+                            <span className={idleMinutes >= 180 ? 'badge-red' : idleMinutes >= 60 ? 'badge-yellow' : 'badge-gray'}>
+                              {formatMinutes(idleMinutes)}
+                            </span>
+                          </div>
+                          <div className="mt-2 text-sm text-slate-600">Свободен с {formatDateTime(item.availableFrom)}</div>
+                        </div>
+                      );
+                    })}
+                    {boardIdleLocomotives.length === 0 && <div className="rounded-[20px] border border-dashed border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-400">Нет свободных локомотивов по выбранной станции.</div>}
+                  </div>
+                </div>
+              </div>
+            </>
           )}
 
           {!loading && view === 'feed' && (
