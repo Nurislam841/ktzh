@@ -151,7 +151,8 @@ jobs:
           echo "NEXT_PUBLIC_API_URL=http://${{ env.SERVER_IP }}:11434" > frontend/.env
 
           # Setup repo name for image pulling
-          echo "IMAGE_REPO=adilzhan17" > .env
+          echo "IMAGE_REPO=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" > .env
+          echo "REGISTRY=${{ env.REGISTRY }}" >> .env
 
           # Login to GHCR on the VPS
           echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
