@@ -24,6 +24,7 @@ build/
 out/
 coverage/
 .temp_node/
+*.tsbuildinfo
 backend/.pgdata/
 
 # IDE

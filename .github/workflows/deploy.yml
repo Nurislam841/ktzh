@@ -11,8 +11,8 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE: adilzhan17/ktz-backend
-  FRONTEND_IMAGE: adilzhan17/ktz-frontend
+  BACKEND_IMAGE: yedilius/ktz-backend
+  FRONTEND_IMAGE: yedilius/ktz-frontend
   SERVER_IP: ${{ secrets.SERVER_IP }}
   DEPLOY_DIR: /root/ktz
 
@@ -33,10 +33,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-
-      - name: Convert repository name to lowercase
-        run: |
-          echo "IMAGE_REPO=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
@@ -70,10 +66,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
-
-      - name: Convert repository name to lowercase
-        run: |
-          echo "IMAGE_REPO=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
@@ -148,8 +140,9 @@ jobs:
           # Create frontend env file
           echo "NEXT_PUBLIC_API_URL=http://${{ env.SERVER_IP }}:11434" > frontend/.env
 
-          # Setup repo name for image pulling
-          echo "IMAGE_REPO=adilzhan17" > .env
+          # Configure remote image names for docker compose
+          echo "BACKEND_IMAGE=ghcr.io/${{ env.BACKEND_IMAGE }}:latest" > .env
+          echo "FRONTEND_IMAGE=ghcr.io/${{ env.FRONTEND_IMAGE }}:latest" >> .env
 
           # Login to GHCR on the VPS
           echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin

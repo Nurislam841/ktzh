@@ -212,5 +212,37 @@ npm test
 - `backend/.pgdata` — служебные файлы локальной БД, очень большой и шумный дифф.
 - `backend/data` — большие бинарные файлы, раздувают репозиторий.
 
-Если репозиторий приватный и тебе это ок — можно коммитить.
+Если репозиторий приватный и тебе это ок - можно коммитить.
 Для больших файлов лучше Git LFS.
+
+## GitHub и деплой
+
+- Основной GitHub-репозиторий: `https://github.com/yedilius/ktz`
+- Основная ветка для релизов: `main`
+- GitHub Actions workflow: `.github/workflows/deploy.yml`
+
+Чтобы автодеплой на VPS работал из GitHub Actions, задай в Secrets репозитория:
+
+- `SERVER_IP`
+- `SSH_PRIVATE_KEY`
+- `DATABASE_URL`
+- `ADMIN_TOKEN`
+- `GH_PAT`
+
+Что делает workflow при пуше в `main`:
+
+- собирает backend и frontend Docker images
+- публикует их в `ghcr.io/yedilius/ktz-backend:latest` и `ghcr.io/yedilius/ktz-frontend:latest`
+- подключается к VPS по SSH
+- обновляет `.env` для `docker compose`
+- подтягивает свежие образы и перезапускает контейнеры
+
+Для локальной разработки `docker compose` по-прежнему собирает локальные образы сам.
+Для сервера workflow подставляет `BACKEND_IMAGE` и `FRONTEND_IMAGE`, поэтому тот же `docker-compose.yml` можно использовать и локально, и на VPS.
+
+Архивы `*.7z` в репозитории переведены на Git LFS. После свежего клона проекта новому разработчику понадобится установленный Git LFS:
+
+```bash
+git lfs install
+git lfs pull
+```
