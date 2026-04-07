@@ -35,7 +35,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    image: ${BACKEND_IMAGE:-ktz-backend-local}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_REPO:-adilzhan17}/ktz-backend:latest
     container_name: ktz_backend
     restart: unless-stopped
     environment:
@@ -71,7 +71,7 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    image: ${BACKEND_IMAGE:-ktz-backend-local}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_REPO:-adilzhan17}/ktz-backend:latest
     container_name: ktz_backend_bootstrap
     restart: "no"
     environment:
@@ -89,7 +89,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: http://localhost:3001
-    image: ${FRONTEND_IMAGE:-ktz-frontend-local}
+    image: ${REGISTRY:-ghcr.io}/${IMAGE_REPO:-adilzhan17}/ktz-frontend:latest
     container_name: ktz_frontend
     restart: unless-stopped
     environment:

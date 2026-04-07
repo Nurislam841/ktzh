@@ -170,21 +170,21 @@ curl -X POST http://localhost:3001/admin/seed \
 
 ### Подвязки (BPMN-контур)
 
-- `POST /api/v1/files` — загрузка XLSX (multipart/form-data)
-- `GET /api/v1/batches/:fileId` — статус обработки файла
-- `GET /api/v1/validation/:fileId/errors` — ошибки валидации по строкам
-- `POST /api/v1/bindings` — UPSERT подвязок
-- `GET /api/v1/bindings` — список подвязок (фильтры: periodId, stationId, status)
-- `GET /api/v1/bindings/:id` — деталь с конфликтами/аллокациями
-- `PUT /api/v1/bindings/:id/status` — перевод статуса
-- `POST /api/v1/conflicts/check` — запуск проверки конфликтов
-- `GET /api/v1/conflicts` — список конфликтов
-- `POST /api/v1/kpi/calculate` — расчёт KPI
-- `GET /api/v1/kpi?periodId=...` — KPI витрина
-- `GET /api/v1/kpi/conflicts-summary?periodId=...` — сводка конфликтов
-- `GET|POST /api/v1/reference/locomotive-models` — модели локомотивов
-- `GET|POST /api/v1/reference/shoulders` — плечи обслуживания
-- `GET|POST /api/v1/reference/maintenance-rules` — правила ТО
+- `POST /api/v1/files` - загрузка XLSX (multipart/form-data)
+- `GET /api/v1/batches/:fileId` - статус обработки файла
+- `GET /api/v1/validation/:fileId/errors` - ошибки валидации по строкам
+- `POST /api/v1/bindings` - UPSERT подвязок
+- `GET /api/v1/bindings` - список подвязок (фильтры: periodId, stationId, status)
+- `GET /api/v1/bindings/:id` - деталь с конфликтами/аллокациями
+- `PUT /api/v1/bindings/:id/status` - перевод статуса
+- `POST /api/v1/conflicts/check` - запуск проверки конфликтов
+- `GET /api/v1/conflicts` - список конфликтов
+- `POST /api/v1/kpi/calculate` - расчёт KPI
+- `GET /api/v1/kpi?periodId=...` - KPI витрина
+- `GET /api/v1/kpi/conflicts-summary?periodId=...` - сводка конфликтов
+- `GET|POST /api/v1/reference/locomotive-models` - модели локомотивов
+- `GET|POST /api/v1/reference/shoulders` - плечи обслуживания
+- `GET|POST /api/v1/reference/maintenance-rules` - правила ТО
 
 ## Тесты
 
@@ -209,40 +209,8 @@ npm test
 ## Про `backend/data` и `backend/.pgdata` в git
 
 Можно коммитить, но обычно не рекомендуется:
-- `backend/.pgdata` — служебные файлы локальной БД, очень большой и шумный дифф.
-- `backend/data` — большие бинарные файлы, раздувают репозиторий.
+- `backend/.pgdata` - служебные файлы локальной БД, очень большой и шумный дифф.
+- `backend/data` - большие бинарные файлы, раздувают репозиторий.
 
 Если репозиторий приватный и тебе это ок - можно коммитить.
 Для больших файлов лучше Git LFS.
-
-## GitHub и деплой
-
-- Основной GitHub-репозиторий: `https://github.com/yedilius/ktz`
-- Основная ветка для релизов: `main`
-- GitHub Actions workflow: `.github/workflows/deploy.yml`
-
-Чтобы автодеплой на VPS работал из GitHub Actions, задай в Secrets репозитория:
-
-- `SERVER_IP`
-- `SSH_PRIVATE_KEY`
-- `DATABASE_URL`
-- `ADMIN_TOKEN`
-- `GH_PAT`
-
-Что делает workflow при пуше в `main`:
-
-- собирает backend и frontend Docker images
-- публикует их в `ghcr.io/yedilius/ktz-backend:latest` и `ghcr.io/yedilius/ktz-frontend:latest`
-- подключается к VPS по SSH
-- обновляет `.env` для `docker compose`
-- подтягивает свежие образы и перезапускает контейнеры
-
-Для локальной разработки `docker compose` по-прежнему собирает локальные образы сам.
-Для сервера workflow подставляет `BACKEND_IMAGE` и `FRONTEND_IMAGE`, поэтому тот же `docker-compose.yml` можно использовать и локально, и на VPS.
-
-Архивы `*.7z` в репозитории переведены на Git LFS. После свежего клона проекта новому разработчику понадобится установленный Git LFS:
-
-```bash
-git lfs install
-git lfs pull
-```
