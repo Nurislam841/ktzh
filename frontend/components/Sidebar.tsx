@@ -3,17 +3,18 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-    LayoutDashboard,
-    Map,
-    Zap,
     ClipboardList,
     Database,
-    HelpCircle,
-    LogOut,
-    Train,
-    Link2,
     Globe,
+    HelpCircle,
+    LayoutDashboard,
+    Link2,
+    LogOut,
+    Map,
+    MapPinned,
     Route,
+    Train,
+    Zap,
 } from 'lucide-react';
 
 const sidebarItems = [
@@ -22,8 +23,9 @@ const sidebarItems = [
     { href: '/resources', icon: Database, label: 'Ресурсы', id: 'resources' },
     { href: '/simulation', icon: Zap, label: 'Симуляция', id: 'simulation' },
     { href: '/versions', icon: ClipboardList, label: 'Версии', id: 'versions' },
-    { href: '/bindings', icon: Link2, label: 'Подвязки', id: 'bindings' },
     { href: '/graph', icon: Route, label: 'График', id: 'graph' },
+    { href: '/bindings', icon: Link2, label: 'Подвязки', id: 'bindings' },
+    { href: '/map', icon: MapPinned, label: 'Карта', id: 'map' },
     { href: '/gis', icon: Globe, label: 'R-Атлас (GIS)', id: 'gis' },
 ];
 
@@ -43,15 +45,13 @@ export default function Sidebar({ stationId }: { stationId: string }) {
 
     return (
         <aside className="sidebar">
-            {/* Logo */}
-            <div className="w-12 h-12 rounded-[1.25rem] bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center text-white mb-8 shadow-lg shadow-gray-200/50 border border-gray-700">
+            <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-[1.25rem] border border-gray-700 bg-gradient-to-br from-gray-900 to-gray-800 text-white shadow-lg shadow-gray-200/50">
                 <Train size={24} strokeWidth={2} />
             </div>
 
-            {/* Main nav */}
-            <nav className="flex flex-col items-center gap-1 flex-1">
+            <nav className="flex flex-1 flex-col items-center gap-1">
                 {sidebarItems.map((item) => {
-                    const isActive = pathname === '/' + item.id || pathname.startsWith('/' + item.id);
+                    const isActive = pathname === `/${item.id}` || pathname.startsWith(`/${item.id}`);
                     const Icon = item.icon;
                     return (
                         <Link
@@ -66,7 +66,6 @@ export default function Sidebar({ stationId }: { stationId: string }) {
                 })}
             </nav>
 
-            {/* Bottom */}
             <div className="flex flex-col items-center gap-1">
                 <button title="Помощь" className="sidebar-icon" onClick={handleHelp}>
                     <HelpCircle size={20} />

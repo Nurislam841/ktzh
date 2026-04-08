@@ -101,6 +101,17 @@ export async function getGituralTimeline(filters?: { corridor?: string; trainNum
     return fetchApi(`/gitural/timeline${query ? `?${query}` : ''}`);
 }
 
+export async function getPassengerTimetableOverview(
+    filters?: { pairKey?: string; locomotiveId?: string },
+    options?: RequestInit,
+) {
+    const params = new URLSearchParams();
+    if (filters?.pairKey) params.set('pairKey', filters.pairKey);
+    if (filters?.locomotiveId) params.set('locomotiveId', filters.locomotiveId);
+    const query = params.toString();
+    return fetchApi<any>(`/passenger-timetable/overview${query ? `?${query}` : ''}`, options);
+}
+
 export async function getGisAtlas() {
     return fetchApi<any>('/gis/atlas');
 }

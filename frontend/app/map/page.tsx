@@ -1,10 +1,10 @@
 import { Suspense } from 'react';
 import PassengerWorkspace from '../../components/passenger/PassengerWorkspace';
 
-export default function BindingsPage() {
+export default function MapPage() {
     return (
         <Suspense fallback={<div className="min-h-screen bg-slate-50" />}>
-            <PassengerWorkspace pageMode="bindings" />
+            <PassengerWorkspace pageMode="map" />
         </Suspense>
     );
 }

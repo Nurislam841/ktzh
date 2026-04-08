@@ -19,6 +19,7 @@ import { LocomotiveStateModule } from './modules/locomotive-state/locomotive-sta
 import { GisModule } from './modules/gis/gis.module';
 import { CrewCallModule } from './modules/crew-call/crew-call.module';
 import { GituralModule } from './modules/gitural/gitural.module';
+import { PassengerTimetableModule } from './modules/passenger-timetable/passenger-timetable.module';
 
 @Module({
     imports: [
@@ -43,6 +44,7 @@ import { GituralModule } from './modules/gitural/gitural.module';
         GisModule,
         CrewCallModule,
         GituralModule,
+        PassengerTimetableModule,
     ],
 })
 export class AppModule { }
