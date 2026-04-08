@@ -1,9 +1,15 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Post, Query } from '@nestjs/common';
+import { PassengerBindingOperationsService } from './passenger-binding-operations.service';
 import { PassengerTimetableService } from './passenger-timetable.service';
+import { PassengerTimetableSyncService } from './passenger-timetable-sync.service';
 
 @Controller('passenger-timetable')
 export class PassengerTimetableController {
-  constructor(private readonly passengerTimetableService: PassengerTimetableService) {}
+  constructor(
+    private readonly passengerTimetableService: PassengerTimetableService,
+    private readonly passengerTimetableSyncService: PassengerTimetableSyncService,
+    private readonly passengerBindingOperationsService: PassengerBindingOperationsService,
+  ) {}
 
   @Get('overview')
   async getOverview(
@@ -14,5 +20,14 @@ export class PassengerTimetableController {
       pairKey,
       locomotiveId,
     });
+  }
+  @Post('sync-db')
+  async syncDatabase() {
+    return this.passengerTimetableSyncService.syncDatabase();
+  }
+
+  @Get('binding-operations')
+  async getBindingOperations(@Query('scenario') scenario?: 'base' | 'optimized') {
+    return this.passengerBindingOperationsService.getOverview({ scenario });
   }
 }

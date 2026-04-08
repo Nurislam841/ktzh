@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Crosshair,
+    Expand,
     Focus,
     GitBranch,
     Link2,
@@ -73,6 +74,7 @@ type TooltipState = {
 };
 
 const DAY = 24 * 60;
+const BASE_TIME_ZOOM = 1.1;
 const LEFT_PANEL_WIDTH = 230;
 const AXIS_HEIGHT = 72;
 const MINOR_GRID_MINUTES = 15;
@@ -437,8 +439,9 @@ export default function PassengerOperationalGraph({
     selectedLocomotiveId?: string | null;
 }) {
     const [detailMode, setDetailMode] = useState<'overview' | 'detail'>('detail');
-    const [timeZoom, setTimeZoom] = useState(1.1);
+    const [timeZoom, setTimeZoom] = useState(BASE_TIME_ZOOM);
     const [stationZoom, setStationZoom] = useState(1);
+    const [extraDays, setExtraDays] = useState(0);
     const [hoveredTrainNo, setHoveredTrainNo] = useState<string | null>(null);
     const [hoveredStationName, setHoveredStationName] = useState<string | null>(null);
     const [selectedStationName, setSelectedStationName] = useState<string | null>(null);
@@ -470,7 +473,8 @@ export default function PassengerOperationalGraph({
             ),
         [pair],
     );
-    const visibleMinutes = Math.max(DAY, Math.ceil((maxMinute + 180) / 60) * 60);
+    const baseVisibleMinutes = Math.max(DAY, Math.ceil((maxMinute + 180) / 60) * 60);
+    const visibleMinutes = baseVisibleMinutes + extraDays * DAY;
     const graphWidth = Math.max((visibleMinutes / 60) * hourWidth, 1200);
     const xFor = useCallback((minute: number) => (minute / 60) * hourWidth, [hourWidth]);
     const yFor = useCallback((index: number) => index * rowHeight + rowHeight / 2, [rowHeight]);
@@ -577,10 +581,21 @@ export default function PassengerOperationalGraph({
     };
 
     const resetView = () => {
-        setTimeZoom(1.1);
+        setTimeZoom(BASE_TIME_ZOOM);
         setStationZoom(1);
+        setExtraDays(0);
         setDetailMode('detail');
         scrollRef.current?.scrollTo({ left: 0, top: 0, behavior: 'smooth' });
+    };
+
+    const zoomPercent = Math.round((timeZoom / BASE_TIME_ZOOM) * 100);
+    const zoomOut = () => setTimeZoom((current) => Math.max(0.75, Number((current - 0.2).toFixed(2))));
+    const zoomIn = () => setTimeZoom((current) => Math.min(2.4, Number((current + 0.2).toFixed(2))));
+    const resetZoom = () => setTimeZoom(BASE_TIME_ZOOM);
+    const extendByDay = () => setExtraDays((current) => Math.min(current + 1, 6));
+    const openGraphWindow = () => {
+        if (typeof window === 'undefined') return;
+        window.open(hrefForPage('graph'), '_blank', 'noopener,noreferrer');
     };
 
     const selectedTrainChangeSummary = useMemo(() => getTrainChangeSummary(selectedTrain), [selectedTrain]);
@@ -676,9 +691,52 @@ export default function PassengerOperationalGraph({
                         </div>
 
                         <div className="mt-4 flex flex-wrap items-center gap-2">
+                            <div className="inline-flex flex-wrap items-center gap-2 rounded-[1.35rem] border border-slate-200 bg-slate-50 px-2 py-1.5 shadow-sm">
+                                <span className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold text-white">{`${zoomPercent}%`}</span>
+                                <button
+                                    onClick={zoomOut}
+                                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950"
+                                    title="Zoom out timeline"
+                                >
+                                    <Minus size={14} />
+                                    Zoom out
+                                </button>
+                                <button
+                                    onClick={resetZoom}
+                                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950"
+                                    title="Reset zoom to 100%"
+                                >
+                                    <Crosshair size={14} />
+                                    {`${zoomPercent}%`}
+                                </button>
+                                <button
+                                    onClick={zoomIn}
+                                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950"
+                                    title="Zoom in timeline"
+                                >
+                                    <Plus size={14} />
+                                    Zoom in
+                                </button>
+                                <button
+                                    onClick={extendByDay}
+                                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950"
+                                    title="Add one more operational day to the right"
+                                >
+                                    <Route size={14} />
+                                    {extraDays > 0 ? `+1 day (${extraDays})` : '+1 day'}
+                                </button>
+                                <button
+                                    onClick={openGraphWindow}
+                                    className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-950 px-4 py-2 text-xs font-semibold text-white transition hover:bg-slate-800"
+                                    title="Open current graph in a new window"
+                                >
+                                    <Expand size={14} />
+                                    Open window
+                                </button>
+                            </div>
                             <div className="inline-flex items-center rounded-2xl border border-slate-200 bg-slate-50 px-2 py-1.5">
                                 <button
-                                    onClick={() => setTimeZoom((current) => Math.max(0.75, Number((current - 0.2).toFixed(2))))}
+                                    onClick={zoomOut}
                                     className="rounded-xl p-1 text-slate-600 hover:bg-white"
                                     title="Уменьшить масштаб по времени"
                                 >
@@ -686,7 +744,7 @@ export default function PassengerOperationalGraph({
                                 </button>
                                 <span className="px-2 text-xs font-semibold text-slate-600">Time</span>
                                 <button
-                                    onClick={() => setTimeZoom((current) => Math.min(2.4, Number((current + 0.2).toFixed(2))))}
+                                    onClick={zoomIn}
                                     className="rounded-xl p-1 text-slate-600 hover:bg-white"
                                     title="Увеличить масштаб по времени"
                                 >

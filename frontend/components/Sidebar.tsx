@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -23,9 +23,11 @@ const sidebarItems = [
     { href: '/resources', icon: Database, label: 'Ресурсы', id: 'resources' },
     { href: '/simulation', icon: Zap, label: 'Симуляция', id: 'simulation' },
     { href: '/versions', icon: ClipboardList, label: 'Версии', id: 'versions' },
-    { href: '/graph', icon: Route, label: 'График', id: 'graph' },
-    { href: '/bindings', icon: Link2, label: 'Подвязки', id: 'bindings' },
-    { href: '/map', icon: MapPinned, label: 'Карта', id: 'map' },
+    { href: '/bindings', icon: Link2, label: 'Подвязки Астана', id: 'bindings' },
+    { href: '/graph', icon: Route, label: 'График Астана', id: 'graph' },
+    { href: '/passenger-graph', icon: Route, label: 'Пасс. график', id: 'passenger-graph' },
+    { href: '/passenger-bindings', icon: Link2, label: 'Пасс. подвязки', id: 'passenger-bindings' },
+    { href: '/passenger-map', icon: MapPinned, label: 'Пасс. карта', id: 'passenger-map' },
     { href: '/gis', icon: Globe, label: 'R-Атлас (GIS)', id: 'gis' },
 ];
 
@@ -51,12 +53,12 @@ export default function Sidebar({ stationId }: { stationId: string }) {
 
             <nav className="flex flex-1 flex-col items-center gap-1">
                 {sidebarItems.map((item) => {
-                    const isActive = pathname === `/${item.id}` || pathname.startsWith(`/${item.id}`);
+                    const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     const Icon = item.icon;
                     return (
                         <Link
                             key={item.id}
-                            href={`/${item.id}?stationId=${stationId}`}
+                            href={`${item.href}?stationId=${stationId}`}
                             title={item.label}
                             className={isActive ? 'sidebar-icon-active' : 'sidebar-icon'}
                         >

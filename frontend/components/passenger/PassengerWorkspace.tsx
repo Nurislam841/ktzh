@@ -62,6 +62,12 @@ const PAGE_TABS: Array<{ key: PageMode; label: string; icon: any }> = [
     { key: 'map', label: 'Карта', icon: MapPinned },
 ];
 
+const PASSENGER_ROUTE_MAP: Record<PageMode, string> = {
+    graph: '/passenger-graph',
+    bindings: '/passenger-bindings',
+    map: '/passenger-map',
+};
+
 const THREAD_ACTIONS = [
     {
         id: 'glue',
@@ -553,7 +559,7 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
     }, [pathname, router, scenarioMode, searchParams]);
 
     const hrefForPage = useCallback((nextPage: PageMode, overrides?: Record<string, string | null | undefined>) => {
-        return mergeQueryString(`/${nextPage}`, new URLSearchParams(searchParams.toString()), overrides ?? {});
+        return mergeQueryString(PASSENGER_ROUTE_MAP[nextPage], new URLSearchParams(searchParams.toString()), overrides ?? {});
     }, [searchParams]);
 
     const loadOverview = useCallback(async (pairKey?: string, locomotiveId?: string, source = 'query-change') => {
@@ -564,7 +570,12 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
         const controller = new AbortController();
         overviewRequestRef.current.controller = controller;
         overviewRequestRef.current.id = requestId;
+        const previousFilterKey = overviewRequestRef.current.filterKey;
         overviewRequestRef.current.filterKey = filterKey;
+
+        if (previousFilterKey && previousFilterKey !== filterKey) {
+            setOverview(null);
+        }
 
         debugGraphState('overview-fetch-start', {
             source,
@@ -685,20 +696,22 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
 
     useEffect(() => {
         if (loading || !overview?.selectedPair) return;
-        const currentQueryFilterKey = buildFilterKey({
-            pairKey: pairKeyParam ?? null,
-            locomotiveId: locomotiveIdParam ?? null,
-        });
-        const overviewFilterKey = buildFilterKey({
-            pairKey: overview.filters?.pairKey ?? null,
-            locomotiveId: overview.filters?.locomotiveId ?? null,
-        });
+        const overviewPairKey = overview.filters?.pairKey ?? '';
+        const overviewLocomotiveId = overview.filters?.locomotiveId ?? '';
+        const requestedPairKey = pairKeyParam ?? '';
+        const requestedLocomotiveId = locomotiveIdParam ?? '';
+
+        // Do not let stale overview state rewrite the current route selection.
+        // Wait until the loaded dataset matches the active query selection first.
+        if (requestedPairKey && requestedPairKey !== overviewPairKey) return;
+        if (requestedLocomotiveId && requestedLocomotiveId !== overviewLocomotiveId) return;
+
         const updates: Record<string, string | null | undefined> = {};
-        if ((pairKeyParam ?? '') !== (overview.filters?.pairKey ?? '')) {
-            updates.pairKey = overview.filters?.pairKey ?? null;
+        if (!requestedPairKey && overviewPairKey) {
+            updates.pairKey = overviewPairKey;
         }
-        if ((locomotiveIdParam ?? '') !== (overview.filters?.locomotiveId ?? '')) {
-            updates.locomotiveId = overview.filters?.locomotiveId ?? null;
+        if (!requestedLocomotiveId && overviewLocomotiveId) {
+            updates.locomotiveId = overviewLocomotiveId;
         }
         const trains = overview.selectedPair?.trains ?? [];
         const safeTrainNo = trains.some((item: any) => item.trainNo === trainNoParam) ? trainNoParam : trains[0]?.trainNo ?? null;
@@ -716,6 +729,8 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
         }
     }, [loading, locomotiveIdParam, overview, pairKeyParam, trainNoParam, updateRoute]);
 
+    const activePairKey = pairKeyParam ?? overview?.filters?.pairKey ?? null;
+    const activeLocomotiveId = locomotiveIdParam ?? overview?.filters?.locomotiveId ?? null;
     const selectedPair = overview?.selectedPair ?? null;
     const selectedTrainNo = selectedPair?.trains?.some((trip: any) => trip.trainNo === trainNoParam)
         ? trainNoParam ?? null
@@ -728,9 +743,9 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
 
     useEffect(() => {
         const nextSelection = {
-            pairKey: selectedPair?.key ?? overview?.filters?.pairKey ?? null,
+            pairKey: activePairKey,
             trainNo: selectedTrainNo,
-            locomotiveId: overview?.filters?.locomotiveId ?? null,
+            locomotiveId: activeLocomotiveId,
             scenario: scenarioMode,
         };
         const previousSelection = previousSelectionRef.current;
@@ -751,7 +766,7 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
             });
             previousSelectionRef.current = nextSelection;
         }
-    }, [overview, scenarioMode, selectedPair?.key, selectedTrainNo]);
+    }, [activeLocomotiveId, activePairKey, overview, scenarioMode, selectedTrainNo]);
 
     const pairOptions = (overview?.catalog?.pairs ?? []).filter((pair: any) => routeType === 'all' || pair.routeType === routeType);
     const tripRows = (selectedPair?.tableRows ?? []).filter((row: any) =>
@@ -839,9 +854,9 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
     const selectedThreadAction = THREAD_ACTIONS.find((item) => item.id === threadAction) ?? THREAD_ACTIONS[0];
     const currentPageMeta = PAGE_META[pageMode];
     const graphRenderKey = buildSelectionKey({
-        pairKey: selectedPair?.key ?? overview?.filters?.pairKey ?? null,
+        pairKey: activePairKey,
         trainNo: selectedTrainNo,
-        locomotiveId: overview?.filters?.locomotiveId ?? null,
+        locomotiveId: activeLocomotiveId,
     });
 
     const handleRouteTypeChange = async (nextRouteType: string) => {
@@ -926,7 +941,7 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
 
                 <select
                     className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:ring-2 focus:ring-sky-100"
-                    value={overview?.filters?.pairKey ?? ''}
+                    value={activePairKey ?? ''}
                     onChange={(event) =>
                         updateRoute({
                             pairKey: event.target.value,
@@ -945,7 +960,7 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
                 {pageMode === 'bindings' ? (
                     <select
                         className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition focus:ring-2 focus:ring-sky-100"
-                        value={overview?.filters?.locomotiveId ?? ''}
+                        value={activeLocomotiveId ?? ''}
                         onChange={(event) => updateRoute({ locomotiveId: event.target.value || null }, 'locomotive-select')}
                     >
                         {(selectedPair?.relevantLocomotives ?? []).map((item: any) => (
@@ -1023,7 +1038,7 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
             onColorModeChange={setColorMode}
             onSelectTrain={(trainNo) => updateRoute({ trainNo }, 'graph-train-select')}
             hrefForPage={hrefForPage}
-            selectedLocomotiveId={overview?.filters?.locomotiveId ?? null}
+            selectedLocomotiveId={activeLocomotiveId}
         />
     );
 
@@ -1031,7 +1046,7 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
         <PassengerBindingsWorkbench
             pair={selectedPair}
             locomotives={locomotiveRows}
-            selectedLocomotiveId={overview?.filters?.locomotiveId ?? null}
+            selectedLocomotiveId={activeLocomotiveId}
             selectedLocomotive={selectedLocomotive}
             recommendations={recommendations}
             scenarioMode={scenarioMode}
@@ -1079,7 +1094,7 @@ export default function PassengerWorkspace({ pageMode }: { pageMode: PageMode })
                 scenarioLabel={scenarioMode === 'base' ? 'Baseline scenario' : 'Optimized scenario'}
                 scenarioMode={scenarioMode === 'base' ? 'base' : 'optimized'}
                 hrefForPage={hrefForPage}
-                selectedLocomotiveId={overview?.filters?.locomotiveId ?? null}
+                selectedLocomotiveId={activeLocomotiveId}
             />
         </div>
     );

@@ -112,6 +112,13 @@ export async function getPassengerTimetableOverview(
     return fetchApi<any>(`/passenger-timetable/overview${query ? `?${query}` : ''}`, options);
 }
 
+export async function getPassengerBindingOperations(filters?: { scenario?: 'base' | 'optimized' }, options?: RequestInit) {
+    const params = new URLSearchParams();
+    if (filters?.scenario) params.set('scenario', filters.scenario);
+    const query = params.toString();
+    return fetchApi<any>(`/passenger-timetable/binding-operations${query ? `?${query}` : ''}`, options);
+}
+
 export async function getGisAtlas() {
     return fetchApi<any>('/gis/atlas');
 }

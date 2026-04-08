@@ -282,6 +282,15 @@ export class PassengerTimetableService {
   private readonly dataDir = path.resolve(process.cwd(), 'data');
   private datasetPromise: Promise<DatasetSnapshot> | null = null;
 
+  async getDatasetSnapshot() {
+    return this.loadDataset();
+  }
+
+  async getParkLocomotives() {
+    const parkPath = await this.resolveParkPath();
+    return parseParkWorkbook(parkPath, this.loadXlsx());
+  }
+
   async getOverview(filters?: { pairKey?: string; locomotiveId?: string }) {
     const dataset = await this.loadDataset();
     const selectedPairKey = this.resolveSelectedPairKey(filters?.pairKey, dataset.pairSummaries);

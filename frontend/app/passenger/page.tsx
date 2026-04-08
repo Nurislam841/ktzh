@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation';
+﻿import { redirect } from 'next/navigation';
 
 export default function PassengerPage({
     searchParams,
@@ -16,5 +16,5 @@ export default function PassengerPage({
         if (typeof value === 'string' && value.length > 0) params.set(key, value);
     });
     const query = params.toString();
-    redirect(query ? `/graph?${query}` : '/graph');
+    redirect(query ? `/passenger-graph?${query}` : '/passenger-graph');
 }
