@@ -119,6 +119,15 @@ export async function getPassengerBindingOperations(filters?: { scenario?: 'base
     return fetchApi<any>(`/passenger-timetable/binding-operations${query ? `?${query}` : ''}`, options);
 }
 
+export async function getPassengerDemoBindings(options?: RequestInit) {
+    return fetchApi<any>('/passenger-timetable/demo-bindings', options);
+}
+
+export function downloadPassengerDemoBindingsWorkbook() {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    window.open(`${apiUrl}/passenger-timetable/demo-bindings/export`, '_blank', 'noopener,noreferrer');
+}
+
 export async function getGisAtlas() {
     return fetchApi<any>('/gis/atlas');
 }

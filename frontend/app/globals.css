@@ -34,6 +34,46 @@
   }
 }
 
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000;
+  }
+
+  .sidebar,
+  .print-hidden {
+    display: none !important;
+  }
+
+  .main-wrapper {
+    margin: 0 !important;
+    min-height: auto !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: #ffffff !important;
+  }
+
+  .page-content {
+    padding: 0.5in !important;
+    overflow: visible !important;
+  }
+
+  .print-area {
+    display: block !important;
+  }
+
+  table {
+    break-inside: auto;
+  }
+
+  tr,
+  td,
+  th {
+    break-inside: avoid;
+  }
+}
+
 @layer components {
 
   /* ── Layout (Floating App Style) ─────────────────────── */

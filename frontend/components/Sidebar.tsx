@@ -27,6 +27,7 @@ const sidebarItems = [
     { href: '/graph', icon: Route, label: 'График Астана', id: 'graph' },
     { href: '/passenger-graph', icon: Route, label: 'Пасс. график', id: 'passenger-graph' },
     { href: '/passenger-bindings', icon: Link2, label: 'Пасс. подвязки', id: 'passenger-bindings' },
+    { href: '/passenger-demo', icon: Train, label: 'Пасс. demo', id: 'passenger-demo' },
     { href: '/passenger-map', icon: MapPinned, label: 'Пасс. карта', id: 'passenger-map' },
     { href: '/gis', icon: Globe, label: 'R-Атлас (GIS)', id: 'gis' },
 ];
