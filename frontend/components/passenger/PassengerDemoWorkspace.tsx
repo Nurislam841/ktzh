@@ -93,7 +93,7 @@ function StatCard({
     );
 }
 
-export default function PassengerDemoWorkspace() {
+export default function PassengerDemoWorkspace({ initialStationId = '' }: { initialStationId?: string }) {
     const [stationId, setStationId] = useState('');
     const [overview, setOverview] = useState<any>(null);
     const [loading, setLoading] = useState(true);
@@ -108,6 +108,13 @@ export default function PassengerDemoWorkspace() {
     useEffect(() => {
         let mounted = true;
         (async () => {
+            const stationIdFromUrl = initialStationId.trim();
+            if (stationIdFromUrl) {
+                setStationId(stationIdFromUrl);
+                window.localStorage.setItem('ktz_station_id', stationIdFromUrl);
+                return;
+            }
+
             const stationResponse = await getStations();
             if (!mounted) return;
             const fromStorage = window.localStorage.getItem('ktz_station_id') ?? '';
@@ -119,7 +126,7 @@ export default function PassengerDemoWorkspace() {
         return () => {
             mounted = false;
         };
-    }, []);
+    }, [initialStationId]);
 
     useEffect(() => {
         const controller = new AbortController();
